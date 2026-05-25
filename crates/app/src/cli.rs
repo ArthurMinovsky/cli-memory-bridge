@@ -11,7 +11,12 @@ pub struct Cli {
 pub enum Commands {
     Init,
     Refresh,
-    Install { provider: String },
+    Install {
+        #[arg(required_unless_present = "all")]
+        provider: Option<String>,
+        #[arg(long)]
+        all: bool,
+    },
     Unlink {
         provider: Option<String>,
         #[arg(long)]

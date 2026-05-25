@@ -14,6 +14,8 @@ use crate::{
     doctor,
 };
 
+const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
+
 pub fn health_check(status: &crate::doctor::DoctorStatus) -> serde_json::Value {
     json!({
         "status": "ok",
@@ -265,43 +267,117 @@ pub fn memory_stats(db_path: impl AsRef<Path>) -> Result<serde_json::Value> {
 }
 
 pub fn serve_stdio() -> Result<()> {
-    let manifest = json!({
-        "status": "ok",
-        "transport": "stdio-jsonl",
-        "tools": [
-            "health_check",
-            "discover_providers",
-            "refresh_imports",
-            "resume_conversation",
-            "search_conversations",
-            "get_context_bundle",
-            "get_recent_history",
-            "search_history",
-            "save_message",
-            "save_conversation_turn",
-            "forget_conversation",
-            "delete_history",
-            "clear_session",
-            "memory_stats"
-        ]
-    });
-
     let stdin = io::stdin();
     let mut stdout = io::stdout();
-    writeln!(stdout, "{}", serde_json::to_string(&manifest)?)?;
 
     for line in stdin.lock().lines() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
-        let response = handle_stdio_request(&line)
-            .unwrap_or_else(|error| json!({ "status": "error", "error": error.to_string() }));
-        writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
-        stdout.flush()?;
+        match handle_mcp_request(&line) {
+            Ok(Some(response)) => {
+                writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
+                stdout.flush()?;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                let response = jsonrpc_error_response(None, -32603, &error.to_string());
+                writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
+                stdout.flush()?;
+            }
+        }
     }
 
     Ok(())
+}
+
+pub fn handle_mcp_request(line: &str) -> Result<Option<serde_json::Value>> {
+    let request: Value = serde_json::from_str(line).context("invalid JSON request")?;
+    let jsonrpc = request
+        .get("jsonrpc")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("request is missing jsonrpc"))?;
+    if jsonrpc != "2.0" {
+        return Err(anyhow!("invalid jsonrpc version: {jsonrpc}"));
+    }
+
+    let method = request
+        .get("method")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("request is missing method"))?;
+    let id = request.get("id").cloned();
+    let params = request.get("params").cloned().unwrap_or_else(|| json!({}));
+
+    match method {
+        "initialize" => {
+            let protocol_version =
+                negotiate_protocol_version(params.get("protocolVersion").and_then(Value::as_str));
+            Ok(Some(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "protocolVersion": protocol_version,
+                    "capabilities": {
+                        "tools": {
+                            "listChanged": false
+                        }
+                    },
+                    "serverInfo": {
+                        "name": "cli-memory",
+                        "version": env!("CARGO_PKG_VERSION")
+                    }
+                }
+            })))
+        }
+        "notifications/initialized" => Ok(None),
+        "ping" => Ok(Some(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {}
+        }))),
+        "tools/list" => Ok(Some(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "tools": tool_definitions()
+            }
+        }))),
+        "tools/call" => {
+            let tool_name = required_string(&params, "name")?;
+            let args = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            let tool_result = match dispatch_tool_call(tool_name, &args) {
+                Ok(value) => json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::to_string_pretty(&value)?
+                    }],
+                    "structuredContent": value,
+                    "isError": false
+                }),
+                Err(error) => json!({
+                    "content": [{
+                        "type": "text",
+                        "text": error.to_string()
+                    }],
+                    "isError": true
+                }),
+            };
+            Ok(Some(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": tool_result
+            })))
+        }
+        _ => Ok(Some(jsonrpc_error_response(
+            id,
+            -32601,
+            &format!("method not found: {method}"),
+        ))),
+    }
 }
 
 pub fn handle_stdio_request(line: &str) -> Result<serde_json::Value> {
@@ -311,65 +387,195 @@ pub fn handle_stdio_request(line: &str) -> Result<serde_json::Value> {
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("request is missing tool"))?;
     let args = request.get("args").cloned().unwrap_or_else(|| json!({}));
+    dispatch_tool_call(tool, &args)
+}
+
+fn dispatch_tool_call(tool: &str, args: &Value) -> Result<Value> {
     let db_path = configured_db_path()?;
 
     match tool {
         "health_check" => Ok(health_check(&doctor::inspect()?)),
         "discover_providers" => discover_providers(),
         "refresh_imports" => refresh_imports(),
-        "resume_conversation" => resume_conversation(
-            &db_path,
-            required_string(&args, "hash_id")?,
-        ),
+        "resume_conversation" => resume_conversation(&db_path, required_string(args, "hash_id")?),
         "search_conversations" => search_conversations(
             &db_path,
-            required_string(&args, "query")?,
-            optional_usize(&args, "limit", 10),
+            required_string(args, "query")?,
+            optional_usize(args, "limit", 10),
         ),
         "get_context_bundle" => get_context_bundle(
             &db_path,
-            required_string(&args, "query")?,
-            optional_usize(&args, "char_budget", 1200),
+            required_string(args, "query")?,
+            optional_usize(args, "char_budget", 1200),
         ),
-        "get_recent_history" => get_recent_history(&db_path, optional_usize(&args, "limit", 20)),
+        "get_recent_history" => get_recent_history(&db_path, optional_usize(args, "limit", 20)),
         "search_history" => search_history(
             &db_path,
-            required_string(&args, "query")?,
-            optional_usize(&args, "limit", 10),
+            required_string(args, "query")?,
+            optional_usize(args, "limit", 10),
         ),
         "save_message" => save_message(
             &db_path,
-            parse_provider(required_string(&args, "provider")?)?,
-            required_string(&args, "conversation_id")?,
-            required_string(&args, "message_id")?,
-            parse_role(required_string(&args, "role")?)?,
-            required_string(&args, "content")?,
+            parse_provider(required_string(args, "provider")?)?,
+            required_string(args, "conversation_id")?,
+            required_string(args, "message_id")?,
+            parse_role(required_string(args, "role")?)?,
+            required_string(args, "content")?,
         ),
         "save_conversation_turn" => save_conversation_turn(
             &db_path,
-            parse_provider(required_string(&args, "provider")?)?,
-            required_string(&args, "conversation_id")?,
-            required_string(&args, "user_message")?,
-            required_string(&args, "assistant_message")?,
+            parse_provider(required_string(args, "provider")?)?,
+            required_string(args, "conversation_id")?,
+            required_string(args, "user_message")?,
+            required_string(args, "assistant_message")?,
         ),
         "forget_conversation" => forget_conversation(
             &db_path,
-            parse_provider(required_string(&args, "provider")?)?,
-            required_string(&args, "hash_id")?,
+            parse_provider(required_string(args, "provider")?)?,
+            required_string(args, "hash_id")?,
         ),
         "delete_history" => delete_history(
             &db_path,
-            parse_provider(required_string(&args, "provider")?)?,
-            required_string(&args, "hash_id")?,
+            parse_provider(required_string(args, "provider")?)?,
+            required_string(args, "hash_id")?,
         ),
         "clear_session" => clear_session(
             &db_path,
-            parse_provider(required_string(&args, "provider")?)?,
-            required_string(&args, "hash_id")?,
+            parse_provider(required_string(args, "provider")?)?,
+            required_string(args, "hash_id")?,
         ),
         "memory_stats" => memory_stats(&db_path),
         _ => Err(anyhow!("unknown tool: {tool}")),
     }
+}
+
+fn negotiate_protocol_version(requested: Option<&str>) -> String {
+    match requested {
+        Some(version) if SUPPORTED_PROTOCOL_VERSIONS.contains(&version) => version.to_owned(),
+        _ => SUPPORTED_PROTOCOL_VERSIONS[0].to_owned(),
+    }
+}
+
+fn tool_definitions() -> Vec<Value> {
+    vec![
+        tool_definition("health_check", "Return cli-memory server and storage health.", json!({
+            "type": "object",
+            "properties": {}
+        })),
+        tool_definition("discover_providers", "Detect supported local transcript providers on this machine.", json!({
+            "type": "object",
+            "properties": {}
+        })),
+        tool_definition("refresh_imports", "Incrementally import newly changed conversation sources.", json!({
+            "type": "object",
+            "properties": {}
+        })),
+        tool_definition("resume_conversation", "Resume a stored conversation transcript by stable hash id.", json!({
+            "type": "object",
+            "properties": {
+                "hash_id": { "type": "string" }
+            },
+            "required": ["hash_id"]
+        })),
+        tool_definition("search_conversations", "Search imported conversation content.", json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" },
+                "limit": { "type": "integer" }
+            },
+            "required": ["query"]
+        })),
+        tool_definition("get_context_bundle", "Build a retrieval bundle for a query.", json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" },
+                "char_budget": { "type": "integer" }
+            },
+            "required": ["query"]
+        })),
+        tool_definition("get_recent_history", "Return recent stored messages.", json!({
+            "type": "object",
+            "properties": {
+                "limit": { "type": "integer" }
+            }
+        })),
+        tool_definition("search_history", "Run storage-backed conversation search.", json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" },
+                "limit": { "type": "integer" }
+            },
+            "required": ["query"]
+        })),
+        tool_definition("save_message", "Save a single provider-scoped message into memory.", json!({
+            "type": "object",
+            "properties": {
+                "provider": { "type": "string" },
+                "conversation_id": { "type": "string" },
+                "message_id": { "type": "string" },
+                "role": { "type": "string" },
+                "content": { "type": "string" }
+            },
+            "required": ["provider", "conversation_id", "message_id", "role", "content"]
+        })),
+        tool_definition("save_conversation_turn", "Save a user/assistant turn pair.", json!({
+            "type": "object",
+            "properties": {
+                "provider": { "type": "string" },
+                "conversation_id": { "type": "string" },
+                "user_message": { "type": "string" },
+                "assistant_message": { "type": "string" }
+            },
+            "required": ["provider", "conversation_id", "user_message", "assistant_message"]
+        })),
+        tool_definition("forget_conversation", "Soft-ban a conversation from future retrieval.", json!({
+            "type": "object",
+            "properties": {
+                "provider": { "type": "string" },
+                "hash_id": { "type": "string" }
+            },
+            "required": ["provider", "hash_id"]
+        })),
+        tool_definition("delete_history", "Delete a provider-scoped conversation from local storage.", json!({
+            "type": "object",
+            "properties": {
+                "provider": { "type": "string" },
+                "hash_id": { "type": "string" }
+            },
+            "required": ["provider", "hash_id"]
+        })),
+        tool_definition("clear_session", "Clear a provider-scoped session transcript while keeping indexes coherent.", json!({
+            "type": "object",
+            "properties": {
+                "provider": { "type": "string" },
+                "hash_id": { "type": "string" }
+            },
+            "required": ["provider", "hash_id"]
+        })),
+        tool_definition("memory_stats", "Return memory database counts and embedding totals.", json!({
+            "type": "object",
+            "properties": {}
+        })),
+    ]
+}
+
+fn tool_definition(name: &str, description: &str, input_schema: Value) -> Value {
+    json!({
+        "name": name,
+        "description": description,
+        "inputSchema": input_schema,
+    })
+}
+
+fn jsonrpc_error_response(id: Option<Value>, code: i64, message: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id.unwrap_or(Value::Null),
+        "error": {
+            "code": code,
+            "message": message
+        }
+    })
 }
 
 fn required_string<'a>(value: &'a Value, key: &str) -> Result<&'a str> {

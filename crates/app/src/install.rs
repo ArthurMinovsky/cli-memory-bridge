@@ -124,6 +124,16 @@ pub fn render_install_bundle(provider: ProviderKind, binary_path: &str) -> Resul
     Ok(value)
 }
 
+pub fn render_install_all_bundle(binary_path: &str) -> Result<Value> {
+    Ok(json!({
+        "mode": "install-all",
+        "providers": all_providers()
+            .iter()
+            .map(|provider| render_install_bundle(*provider, binary_path))
+            .collect::<Result<Vec<_>>>()?,
+    }))
+}
+
 pub fn render_unlink_bundle(provider: ProviderKind) -> Result<Value> {
     let value = match provider {
         ProviderKind::Codex => json!({

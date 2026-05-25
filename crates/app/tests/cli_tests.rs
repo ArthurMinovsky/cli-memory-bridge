@@ -95,6 +95,20 @@ fn install_command_renders_gemini_bundle() {
 }
 
 #[test]
+fn install_all_command_renders_all_provider_bundles() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+        .args(["install", "--all"])
+        .output()
+        .expect("install --all should run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"mode\": \"install-all\""));
+    assert!(stdout.contains("\"provider\": \"gemini\""));
+    assert!(stdout.contains("\"provider\": \"antigravity-cli\""));
+}
+
+#[test]
 fn install_command_renders_codex_assets() {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
         .args(["install", "codex"])

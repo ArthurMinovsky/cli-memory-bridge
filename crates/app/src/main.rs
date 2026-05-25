@@ -30,14 +30,22 @@ fn main() {
                 println!("{}", summary.providers.join(","));
             }
         }
-        Commands::Install { provider } => {
-            let provider = ProviderKind::from_slug(&provider).expect("provider should be valid");
+        Commands::Install { provider, all } => {
             let binary_path = std::env::current_exe().expect("current executable path should resolve");
-            let bundle = install::render_install_bundle(
-                provider,
-                &binary_path.display().to_string(),
-            )
-            .expect("install bundle should render");
+            let bundle = if all {
+                install::render_install_all_bundle(&binary_path.display().to_string())
+                    .expect("install-all bundle should render")
+            } else {
+                let provider = provider
+                    .as_deref()
+                    .expect("provider should be passed unless --all is used");
+                let provider = ProviderKind::from_slug(provider).expect("provider should be valid");
+                install::render_install_bundle(
+                    provider,
+                    &binary_path.display().to_string(),
+                )
+                .expect("install bundle should render")
+            };
             println!(
                 "{}",
                 serde_json::to_string_pretty(&bundle).expect("install bundle should serialize")

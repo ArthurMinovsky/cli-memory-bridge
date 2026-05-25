@@ -137,12 +137,71 @@ fn save_turn_and_resume_round_trip() {
 }
 
 #[test]
-fn stdio_request_dispatches_to_health_check() {
+fn initialize_returns_jsonrpc_2_result() {
     let request = serde_json::json!({
-        "tool": "health_check",
-        "args": {}
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {}
+        }
     });
-    let response = cli_memory_app::mcp::handle_stdio_request(&request.to_string())
-        .expect("request should dispatch");
-    assert_eq!(response["status"], "ok");
+    let response = cli_memory_app::mcp::handle_mcp_request(&request.to_string())
+        .expect("initialize should dispatch")
+        .expect("initialize should return a response");
+    assert_eq!(response["jsonrpc"], "2.0");
+    assert_eq!(response["id"], 1);
+    assert_eq!(response["result"]["protocolVersion"], "2025-03-26");
+    assert_eq!(response["result"]["serverInfo"]["name"], "cli-memory");
+}
+
+#[test]
+fn initialized_notification_returns_no_response() {
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized",
+        "params": {}
+    });
+    let response = cli_memory_app::mcp::handle_mcp_request(&request.to_string())
+        .expect("initialized notification should dispatch");
+    assert!(response.is_none());
+}
+
+#[test]
+fn tools_list_exposes_health_check() {
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/list",
+        "params": {}
+    });
+    let response = cli_memory_app::mcp::handle_mcp_request(&request.to_string())
+        .expect("tools/list should dispatch")
+        .expect("tools/list should return a response");
+    let tools = response["result"]["tools"]
+        .as_array()
+        .expect("tools should be an array");
+    assert!(tools.iter().any(|tool| tool["name"] == "health_check"));
+    assert!(tools.iter().any(|tool| tool["name"] == "search_conversations"));
+}
+
+#[test]
+fn tools_call_dispatches_to_health_check() {
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+            "name": "health_check",
+            "arguments": {}
+        }
+    });
+    let response = cli_memory_app::mcp::handle_mcp_request(&request.to_string())
+        .expect("tools/call should dispatch")
+        .expect("tools/call should return a response");
+    assert_eq!(response["jsonrpc"], "2.0");
+    assert_eq!(response["id"], 3);
+    assert_eq!(response["result"]["isError"], false);
+    assert_eq!(response["result"]["structuredContent"]["status"], "ok");
 }
