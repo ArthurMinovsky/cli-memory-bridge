@@ -1,0 +1,12 @@
+{
+  "id": "zed-summary-only",
+  "summary": "Only a sparse summary exists.",
+  "messages": [
+    {
+      "text": "",
+      "metadata": {
+        "role": "user"
+      }
+    }
+  ]
+}

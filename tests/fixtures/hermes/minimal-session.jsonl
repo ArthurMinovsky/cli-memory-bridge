@@ -1,0 +1,2 @@
+{"sessionId":"hermes-conv-1","role":"user","content":"How do I run the app?"}
+{"sessionId":"hermes-conv-1","role":"assistant","content":"Use cargo run --bin cli-memory."}

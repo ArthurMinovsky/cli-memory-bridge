@@ -1,0 +1,24 @@
+[package]
+name = "cli-memory-app"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "cli-memory"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+cli-memory-core = { path = "../core" }
+cli-memory-engine = { path = "../engine" }
+cli-memory-integrations = { path = "../integrations" }
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+cli-memory-core = { path = "../core" }
+cli-memory-integrations = { path = "../integrations" }
+cli-memory-engine = { path = "../engine" }
+tempfile = "3"

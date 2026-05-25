@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-04-20T13:04:04.645Z","sessionId":"e9639077-a365-4bb2-86f4-4f77ba578ef0","cwd":"/Users/aminovsky/Desktop","message":{"role":"user","content":[{"type":"text","text":"Find the cause."}]}}
+{"type":"assistant","timestamp":"2026-04-20T13:04:22.164Z","sessionId":"e9639077-a365-4bb2-86f4-4f77ba578ef0","cwd":"/Users/aminovsky/Desktop","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"docker ps -a"}},{"type":"text","text":"All clean."}]}}

@@ -1,0 +1,13 @@
+{
+  "sessionId": "opencode-conv-1",
+  "messages": [
+    {
+      "role": "user",
+      "content": "How do I run the app?"
+    },
+    {
+      "role": "assistant",
+      "content": "Use cargo run --bin cli-memory."
+    }
+  ]
+}

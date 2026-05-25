@@ -1,0 +1,18 @@
+{
+  "id": "zed-conv-1",
+  "summary": "Run the app",
+  "messages": [
+    {
+      "text": "How do I run the app?",
+      "metadata": {
+        "role": "user"
+      }
+    },
+    {
+      "text": "Use cargo run --bin cli-memory.",
+      "metadata": {
+        "role": "assistant"
+      }
+    }
+  ]
+}

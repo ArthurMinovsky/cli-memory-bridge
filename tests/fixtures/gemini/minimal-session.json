@@ -1,0 +1,13 @@
+{
+  "sessionId": "gemini-conv-1",
+  "turns": [
+    {
+      "user": {
+        "text": "How do I run the app?"
+      },
+      "assistant": {
+        "content": "Use cargo run --bin cli-memory."
+      }
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "name": "cli-memory",
+  "version": "0.1.0",
+  "description": "Cross-CLI memory bridge with local transcript import, MCP serving, and npx distribution",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArthurMinovsky/cli-memory-bridge.git"
+  },
+  "homepage": "https://github.com/ArthurMinovsky/cli-memory-bridge",
+  "bugs": {
+    "url": "https://github.com/ArthurMinovsky/cli-memory-bridge/issues"
+  },
+  "keywords": [
+    "mcp",
+    "memory",
+    "cli",
+    "codex",
+    "claude",
+    "gemini",
+    "copilot",
+    "zed",
+    "opencode",
+    "hermes"
+  ],
+  "bin": {
+    "cli-memory": "npm/bin/cli-memory.js"
+  },
+  "files": [
+    "npm/bin",
+    "npm/vendor",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
