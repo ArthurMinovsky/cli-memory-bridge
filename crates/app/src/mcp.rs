@@ -1,5 +1,5 @@
 use std::{
-    io::{self, BufRead, Write},
+    io::{self, BufRead, BufReader, Write},
     path::Path,
 };
 
@@ -269,21 +269,18 @@ pub fn memory_stats(db_path: impl AsRef<Path>) -> Result<serde_json::Value> {
 pub fn serve_stdio() -> Result<()> {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
+    let mut reader = BufReader::new(stdin.lock());
 
-    for line in stdin.lock().lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        match handle_mcp_request(&line) {
+    while let Some(message) = read_framed_message(&mut reader)? {
+        match handle_mcp_request(&message) {
             Ok(Some(response)) => {
-                writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
+                write_framed_message(&mut stdout, &response)?;
                 stdout.flush()?;
             }
             Ok(None) => {}
             Err(error) => {
                 let response = jsonrpc_error_response(None, -32603, &error.to_string());
-                writeln!(stdout, "{}", serde_json::to_string(&response)?)?;
+                write_framed_message(&mut stdout, &response)?;
                 stdout.flush()?;
             }
         }
@@ -576,6 +573,96 @@ fn jsonrpc_error_response(id: Option<Value>, code: i64, message: &str) -> Value 
             "message": message
         }
     })
+}
+
+fn read_framed_message<R: BufRead>(reader: &mut R) -> Result<Option<String>> {
+    let mut content_length = None;
+
+    loop {
+        let mut header_line = String::new();
+        let bytes_read = reader
+            .read_line(&mut header_line)
+            .context("failed to read MCP header line")?;
+
+        if bytes_read == 0 {
+            return Ok(None);
+        }
+
+        if header_line == "\r\n" || header_line == "\n" {
+            break;
+        }
+
+        let header_line = header_line.trim_end_matches(['\r', '\n']);
+        let Some((name, value)) = header_line.split_once(':') else {
+            return Err(anyhow!("invalid MCP header line: {header_line}"));
+        };
+
+        if name.eq_ignore_ascii_case("Content-Length") {
+            let parsed = value
+                .trim()
+                .parse::<usize>()
+                .with_context(|| format!("invalid Content-Length value: {}", value.trim()))?;
+            content_length = Some(parsed);
+        }
+    }
+
+    let content_length =
+        content_length.ok_or_else(|| anyhow!("missing Content-Length header"))?;
+    let mut payload = vec![0_u8; content_length];
+    reader
+        .read_exact(&mut payload)
+        .context("failed to read MCP payload body")?;
+    let payload = String::from_utf8(payload).context("MCP payload was not valid UTF-8")?;
+    Ok(Some(payload))
+}
+
+fn write_framed_message<W: Write>(writer: &mut W, value: &Value) -> Result<()> {
+    let payload = serde_json::to_vec(value)?;
+    write!(writer, "Content-Length: {}\r\n\r\n", payload.len())?;
+    writer.write_all(&payload)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{read_framed_message, write_framed_message};
+    use serde_json::json;
+    use std::io::Cursor;
+
+    #[test]
+    fn framed_reader_extracts_json_payload() {
+        let payload = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
+        let framed = format!("Content-Length: {}\r\n\r\n{}", payload.len(), payload);
+        let mut reader = Cursor::new(framed.into_bytes());
+
+        let message = read_framed_message(&mut reader)
+            .expect("framed message should parse")
+            .expect("framed message should exist");
+
+        assert_eq!(message, payload);
+    }
+
+    #[test]
+    fn framed_writer_emits_content_length_header() {
+        let value = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {}
+        });
+        let mut out = Vec::new();
+        write_framed_message(&mut out, &value).expect("framed response should write");
+        let text = String::from_utf8(out).expect("framed response should be utf8");
+
+        assert!(text.starts_with("Content-Length: "));
+        let (_, body) = text
+            .split_once("\r\n\r\n")
+            .expect("framed response should contain header separator");
+        let parsed: serde_json::Value =
+            serde_json::from_str(body).expect("framed response body should be valid json");
+        assert_eq!(parsed["jsonrpc"], "2.0");
+        assert_eq!(parsed["id"], 1);
+        assert_eq!(parsed["result"], json!({}));
+    }
 }
 
 fn required_string<'a>(value: &'a Value, key: &str) -> Result<&'a str> {

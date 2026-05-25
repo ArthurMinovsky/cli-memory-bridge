@@ -205,3 +205,30 @@ fn tools_call_dispatches_to_health_check() {
     assert_eq!(response["result"]["isError"], false);
     assert_eq!(response["result"]["structuredContent"]["status"], "ok");
 }
+
+#[test]
+fn framed_initialize_request_parses_and_returns_jsonrpc_response() {
+    let payload = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 99,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {}
+        }
+    })
+    .to_string();
+    let framed = format!("Content-Length: {}\r\n\r\n{}", payload.len(), payload);
+    let request = framed
+        .split_once("\r\n\r\n")
+        .expect("framed request should contain header separator")
+        .1;
+
+    let response = cli_memory_app::mcp::handle_mcp_request(request)
+        .expect("framed initialize body should dispatch")
+        .expect("initialize should return a response");
+
+    assert_eq!(response["jsonrpc"], "2.0");
+    assert_eq!(response["id"], 99);
+    assert_eq!(response["result"]["protocolVersion"], "2025-03-26");
+}

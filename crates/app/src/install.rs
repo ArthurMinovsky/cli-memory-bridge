@@ -79,7 +79,7 @@ pub fn render_install_bundle(provider: ProviderKind, binary_path: &str) -> Resul
         ProviderKind::Copilot => json!({
             "provider": provider.as_slug(),
             "mode": "config",
-            "config_path": "~/.config/github-copilot-cli/config.json",
+            "config_path": "~/.copilot/mcp-config.json",
             "preferred_launcher": "npx",
             "npx_snippet": json!({
                 "mcpServers": {
@@ -169,7 +169,7 @@ pub fn render_unlink_bundle(provider: ProviderKind) -> Result<Value> {
         ProviderKind::Copilot => json!({
             "provider": provider.as_slug(),
             "mode": "config",
-            "config_path": "~/.config/github-copilot-cli/config.json",
+            "config_path": "~/.copilot/mcp-config.json",
             "remove_keys": ["mcpServers.cli-memory"],
         }),
         ProviderKind::Zed => json!({

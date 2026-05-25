@@ -3,7 +3,7 @@ use cli_memory_app::bootstrap::{configured_db_path, run_init, run_refresh};
 use cli_memory_app::cli::{Cli, Commands};
 use cli_memory_app::{doctor, install, mcp};
 use cli_memory_core::ProviderKind;
-use cli_memory_engine::{RetrievalService, Storage};
+use cli_memory_engine::Storage;
 
 fn main() {
     let cli = Cli::parse();
@@ -75,6 +75,7 @@ fn main() {
         }
         Commands::Serve => mcp::serve_stdio().expect("serve should succeed"),
         Commands::Resume { hash_id } => {
+            eprintln!("cli-memory: refreshing local conversation sources...");
             run_refresh().expect("refresh before resume should succeed");
             let storage = Storage::open(configured_db_path().expect("db path should resolve"))
                 .expect("storage should open");
@@ -100,13 +101,13 @@ fn main() {
             }
         }
         Commands::ConvSearch { query } => {
+            eprintln!("cli-memory: refreshing local conversation sources...");
             run_refresh().expect("refresh before conversation search should succeed");
             let storage = Storage::open(configured_db_path().expect("db path should resolve"))
                 .expect("storage should open");
-            let service = RetrievalService::from_storage(&storage)
-                .expect("retrieval service should load from storage");
-            let results = service
-                .search_lines(&query, 10)
+            eprintln!("cli-memory: searching indexed conversation history...");
+            let results = storage
+                .search_conversations(&query, 10)
                 .expect("conversation search should succeed");
             if results.is_empty() {
                 println!("no conversations matched {query}");

@@ -95,6 +95,20 @@ fn install_command_renders_gemini_bundle() {
 }
 
 #[test]
+fn install_command_renders_copilot_bundle_with_documented_config_path() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+        .args(["install", "copilot"])
+        .output()
+        .expect("install should run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"provider\": \"copilot\""));
+    assert!(stdout.contains("\"config_path\": \"~/.copilot/mcp-config.json\""));
+    assert!(stdout.contains("\"preferred_launcher\": \"npx\""));
+}
+
+#[test]
 fn install_all_command_renders_all_provider_bundles() {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
         .args(["install", "--all"])
