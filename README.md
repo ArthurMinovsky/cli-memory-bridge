@@ -15,7 +15,7 @@ The current Rust build supports transcript import and retrieval for:
 It also ships an npm package surface so MCP configs can launch it through:
 
 ```bash
-npx -y cli-memory serve
+npx -y @aminovsky/cli-memory serve
 ```
 
 ## Features
@@ -38,7 +38,7 @@ npx -y cli-memory serve
 For MCP usage and command execution through npm:
 
 ```bash
-npx -y cli-memory --help
+npx -y @aminovsky/cli-memory --help
 ```
 
 On first install, the npm package downloads a platform-specific `cli-memory` binary from the matching GitHub release for this package version and stores it under `npm/vendor/<platform>/`.
@@ -46,7 +46,7 @@ On first install, the npm package downloads a platform-specific `cli-memory` bin
 If you install the package globally:
 
 ```bash
-npm install -g cli-memory
+npm install -g @aminovsky/cli-memory
 cli-memory --help
 ```
 
@@ -71,7 +71,7 @@ cli-memory conv-search "run the app"
 Run the MCP server through `npx`:
 
 ```bash
-npx -y cli-memory serve
+npx -y @aminovsky/cli-memory serve
 ```
 
 ## MCP launch
@@ -81,7 +81,7 @@ The npm package is designed for MCP configs that accept `command` plus `args`. T
 ```json
 {
   "command": "npx",
-  "args": ["-y", "cli-memory", "serve"]
+  "args": ["-y", "@aminovsky/cli-memory", "serve"]
 }
 ```
 
@@ -127,10 +127,10 @@ The intended order is:
 
 ```bash
 cli-memory unlink --all
-npm uninstall -g cli-memory
+npm uninstall -g @aminovsky/cli-memory
 ```
 
-If you only use `npx -y cli-memory ...`, there may be no global npm package to remove.
+If you only use `npx -y @aminovsky/cli-memory ...`, there may be no global npm package to remove.
 
 ## Supported local transcript sources
 
@@ -156,7 +156,7 @@ Before publishing to npm:
 - build release binaries for each supported platform
 - upload them to the GitHub release tagged `v<package.json version>`
 - use asset names in the form `cli-memory-<version>-<platform-arch>` and `cli-memory.exe-<version>-<platform-arch>` for Windows
-- verify with `npm pack --dry-run` and a clean `npx -y cli-memory --help` install test
+- verify with `npm pack --dry-run` and a clean `npx -y @aminovsky/cli-memory --help` install test
 
 ## Status
 

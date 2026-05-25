@@ -148,7 +148,7 @@ fn uninstall_command_renders_package_removal_guidance() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("\"mode\": \"uninstall\""));
     assert!(stdout.contains("cli-memory unlink --all"));
-    assert!(stdout.contains("npm uninstall -g cli-memory"));
+    assert!(stdout.contains("npm uninstall -g @aminovsky/cli-memory"));
 }
 
 #[test]

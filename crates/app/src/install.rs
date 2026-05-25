@@ -18,7 +18,7 @@ pub fn all_providers() -> &'static [ProviderKind] {
 pub fn render_install_bundle(provider: ProviderKind, binary_path: &str) -> Result<Value> {
     let npx_json = json!({
         "command": "npx",
-        "args": ["-y", "cli-memory", "serve"],
+        "args": ["-y", "@aminovsky/cli-memory", "serve"],
     });
 
     let value = match provider {
@@ -45,7 +45,7 @@ pub fn render_install_bundle(provider: ProviderKind, binary_path: &str) -> Resul
             "mode": "config",
             "config_path": "~/.hermes/config.yaml",
             "preferred_launcher": "npx",
-            "npx_snippet": "mcp_servers:\n  cli-memory:\n    command: \"npx\"\n    args:\n      - \"-y\"\n      - \"cli-memory\"\n      - \"serve\"\n",
+            "npx_snippet": "mcp_servers:\n  cli-memory:\n    command: \"npx\"\n    args:\n      - \"-y\"\n      - \"@aminovsky/cli-memory\"\n      - \"serve\"\n",
             "binary_snippet": cli_memory_integrations::render_hermes_install(binary_path),
         }),
         ProviderKind::Gemini => json!({
@@ -69,7 +69,7 @@ pub fn render_install_bundle(provider: ProviderKind, binary_path: &str) -> Resul
                 "mcp": {
                     "cli-memory": {
                         "type": "local",
-                        "command": ["npx", "-y", "cli-memory", "serve"],
+                        "command": ["npx", "-y", "@aminovsky/cli-memory", "serve"],
                         "enabled": true,
                     }
                 }
@@ -86,7 +86,7 @@ pub fn render_install_bundle(provider: ProviderKind, binary_path: &str) -> Resul
                     "cli-memory": {
                         "type": "local",
                         "command": "npx",
-                        "args": ["-y", "cli-memory", "serve"],
+                        "args": ["-y", "@aminovsky/cli-memory", "serve"],
                         "tools": ["*"],
                     }
                 }
@@ -114,7 +114,7 @@ pub fn render_install_bundle(provider: ProviderKind, binary_path: &str) -> Resul
                 "mcpServers": {
                     "cli-memory": {
                         "command": "npx",
-                        "args": ["-y", "cli-memory", "serve"],
+                        "args": ["-y", "@aminovsky/cli-memory", "serve"],
                     }
                 }
             }).to_string(),
@@ -194,10 +194,10 @@ pub fn render_uninstall_bundle() -> Result<Value> {
         "mode": "uninstall",
         "steps": [
             "Run `cli-memory unlink --all` first to remove provider MCP/config links.",
-            "If you installed the npm package globally, remove it with `npm uninstall -g cli-memory`.",
-            "If you only use `npx -y cli-memory ...`, there is no global package to remove.",
+            "If you installed the npm package globally, remove it with `npm uninstall -g @aminovsky/cli-memory`.",
+            "If you only use `npx -y @aminovsky/cli-memory ...`, there is no global package to remove.",
         ],
         "unlink_all_command": "cli-memory unlink --all",
-        "npm_uninstall_command": "npm uninstall -g cli-memory",
+        "npm_uninstall_command": "npm uninstall -g @aminovsky/cli-memory",
     }))
 }

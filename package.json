@@ -1,5 +1,5 @@
 {
-  "name": "cli-memory",
+  "name": "@aminovsky/cli-memory",
   "version": "0.1.0",
   "description": "Cross-CLI memory bridge with local transcript import, MCP serving, and npx distribution",
   "license": "Apache-2.0",
