@@ -31,26 +31,39 @@ pub fn import_claude(path: impl AsRef<Path>) -> Result<ImportedTranscript> {
             .map(str::to_owned)
             .or(conversation_id);
 
-        let message = line.get("message").context("Claude transcript line missing message")?;
+        let Some(message) = line.get("message") else {
+            continue;
+        };
         let default_role = message
             .get("role")
             .and_then(Value::as_str)
             .context("Claude transcript message missing role")?;
-        let content_blocks = message
+        let content = message
             .get("content")
-            .and_then(Value::as_array)
             .context("Claude transcript message missing content")?;
 
-        for (role, text) in extract_claude_messages(content_blocks, default_role)? {
-            if text.is_empty() {
-                continue;
-            }
+        if let Some(content_blocks) = content.as_array() {
+            for (role, text) in extract_claude_messages(content_blocks, default_role)? {
+                if text.is_empty() {
+                    continue;
+                }
 
-            messages.push(TranscriptMessage {
-                message_id: format!("msg-{}", messages.len() + 1),
-                role,
-                content: text,
-            });
+                messages.push(TranscriptMessage {
+                    message_id: format!("msg-{}", messages.len() + 1),
+                    role,
+                    content: text,
+                });
+            }
+        } else if let Some(text) = content.as_str().map(str::trim) {
+            if let Some(role) = message_role(default_role) {
+                if !text.is_empty() {
+                    messages.push(TranscriptMessage {
+                        message_id: format!("msg-{}", messages.len() + 1),
+                        role,
+                        content: text.to_owned(),
+                    });
+                }
+            }
         }
     }
 
