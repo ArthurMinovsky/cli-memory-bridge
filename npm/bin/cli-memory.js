@@ -3,15 +3,12 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-
-function binaryName() {
-  return process.platform === "win32" ? "cli-memory.exe" : "cli-memory";
-}
+const { binaryName, platformKey } = require("../platform");
 
 function candidateBinaries() {
-  const name = binaryName();
+  const name = binaryName(process.platform);
   const root = path.resolve(__dirname, "..", "..");
-  const platformKey = `${process.platform}-${process.arch}`;
+  const currentPlatformKey = platformKey(process.platform, process.arch);
 
   const candidates = [];
 
@@ -20,7 +17,7 @@ function candidateBinaries() {
   }
 
   candidates.push(
-    path.join(root, "npm", "vendor", platformKey, name),
+    path.join(root, "npm", "vendor", currentPlatformKey, name),
     path.join(root, "target", "release", name),
     path.join(root, "target", "debug", name)
   );
@@ -41,11 +38,11 @@ function resolveBinary() {
 const binary = resolveBinary();
 
 if (!binary) {
-  const platformKey = `${process.platform}-${process.arch}`;
+  const currentPlatformKey = platformKey(process.platform, process.arch);
   console.error(
     [
       "cli-memory: no bundled binary was found for this package.",
-      `expected platform key: ${platformKey}`,
+      `expected platform key: ${currentPlatformKey}`,
       "checked npm/vendor, target/release, and target/debug",
       "set CLI_MEMORY_BINARY to an explicit executable path to override",
     ].join("\n")

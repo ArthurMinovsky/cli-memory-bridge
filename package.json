@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Cross-CLI memory bridge with local transcript import, MCP serving, and npx distribution",
   "license": "Apache-2.0",
+  "private": false,
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ArthurMinovsky/cli-memory-bridge.git"
@@ -26,10 +27,16 @@
   "bin": {
     "cli-memory": "npm/bin/cli-memory.js"
   },
+  "scripts": {
+    "postinstall": "node npm/install.js"
+  },
   "files": [
     "npm/bin",
+    "npm/install.js",
+    "npm/platform.js",
     "npm/vendor",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18"

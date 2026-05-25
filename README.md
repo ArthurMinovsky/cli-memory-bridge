@@ -41,6 +41,8 @@ For MCP usage and command execution through npm:
 npx -y cli-memory --help
 ```
 
+On first install, the npm package downloads a platform-specific `cli-memory` binary from the matching GitHub release for this package version and stores it under `npm/vendor/<platform>/`.
+
 If you install the package globally:
 
 ```bash
@@ -147,8 +149,14 @@ For npm release prep, this repo now includes:
 - package metadata in [package.json](/Users/aminovsky/Desktop/cli-memory-bridge-rs/package.json)
 - Apache 2.0 license in [LICENSE](/Users/aminovsky/Desktop/cli-memory-bridge-rs/LICENSE)
 - npm bin entrypoint in [npm/bin/cli-memory.js](/Users/aminovsky/Desktop/cli-memory-bridge-rs/npm/bin/cli-memory.js)
+- npm postinstall downloader in [npm/install.js](/Users/aminovsky/Desktop/cli-memory-bridge-rs/npm/install.js)
+- shared platform mapping in [npm/platform.js](/Users/aminovsky/Desktop/cli-memory-bridge-rs/npm/platform.js)
 
-Before publishing, ensure the package contains the intended platform binaries or a valid `CLI_MEMORY_BINARY` override path strategy for your release workflow.
+Before publishing to npm:
+- build release binaries for each supported platform
+- upload them to the GitHub release tagged `v<package.json version>`
+- use asset names in the form `cli-memory-<version>-<platform-arch>` and `cli-memory.exe-<version>-<platform-arch>` for Windows
+- verify with `npm pack --dry-run` and a clean `npx -y cli-memory --help` install test
 
 ## Status
 
