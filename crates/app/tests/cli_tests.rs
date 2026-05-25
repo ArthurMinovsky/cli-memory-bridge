@@ -105,7 +105,9 @@ fn install_command_renders_copilot_bundle_with_documented_config_path() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("\"provider\": \"copilot\""));
     assert!(stdout.contains("\"config_path\": \"~/.copilot/mcp-config.json\""));
-    assert!(stdout.contains("\"preferred_launcher\": \"npx\""));
+    assert!(stdout.contains("\"preferred_launcher\": \"global-command\""));
+    assert!(stdout.contains("\\\"command\\\":\\\"cli-memory\\\""));
+    assert!(stdout.contains("\\\"args\\\":[\\\"serve\\\"]"));
 }
 
 #[test]
@@ -959,5 +961,63 @@ fn refresh_imports_only_new_conversations_after_init() {
             .count_message_embeddings()
             .expect("message embeddings should count"),
         4
+    );
+}
+
+#[test]
+fn refresh_skips_reimporting_changed_existing_conversations() {
+    let home = tempfile::tempdir().expect("temporary directory should be created");
+    let data_dir = tempfile::tempdir().expect("temporary data directory should be created");
+    let model_dir = tempfile::tempdir().expect("temporary model directory should be created");
+    let codex_dir = home.path().join(".codex/sessions");
+    let session = codex_dir.join("session-a.jsonl");
+
+    std::fs::create_dir_all(&codex_dir).expect("Codex sessions directory should be created");
+    std::fs::write(home.path().join(".codex/session_index.jsonl"), "{}\n")
+        .expect("Codex session index should be written");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/codex/minimal-session.jsonl"
+        ),
+        &session,
+    )
+    .expect("Codex fixture should be copied");
+
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+        .arg("init")
+        .env("CLI_MEMORY_HOME", home.path())
+        .env("CLI_MEMORY_DATA_DIR", data_dir.path())
+        .env("CLI_MEMORY_MODEL_PATH", model_dir.path())
+        .output()
+        .expect("init should run");
+    assert!(init.status.success());
+
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    let mut changed_text = std::fs::read_to_string(&session).expect("session should read");
+    changed_text.push_str(
+        "{\"timestamp\":\"2026-05-18T19:35:34.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Append one more line that should not trigger reimport.\"}]}}\n",
+    );
+    std::fs::write(&session, changed_text).expect("session should be updated");
+
+    let refresh = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+        .arg("refresh")
+        .env("CLI_MEMORY_HOME", home.path())
+        .env("CLI_MEMORY_DATA_DIR", data_dir.path())
+        .env("CLI_MEMORY_MODEL_PATH", model_dir.path())
+        .output()
+        .expect("refresh should run");
+    assert!(refresh.status.success());
+    let stdout = String::from_utf8_lossy(&refresh.stdout);
+    assert!(stdout.contains("imported 0 conversations / 0 messages"));
+
+    let storage = Storage::open(data_dir.path().join("db.sqlite3")).expect("db should open");
+    assert_eq!(storage.count_conversations().expect("conversations should count"), 1);
+    assert_eq!(storage.count_messages().expect("messages should count"), 2);
+    assert_eq!(
+        storage
+            .count_message_embeddings()
+            .expect("message embeddings should count"),
+        2
     );
 }

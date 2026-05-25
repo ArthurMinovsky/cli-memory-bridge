@@ -291,6 +291,26 @@ pub fn serve_stdio() -> Result<()> {
 
 pub fn handle_mcp_request(line: &str) -> Result<Option<serde_json::Value>> {
     let request: Value = serde_json::from_str(line).context("invalid JSON request")?;
+    if let Some(items) = request.as_array() {
+        let mut responses = Vec::new();
+        for item in items {
+            let Some(response) = handle_mcp_value(item.clone())? else {
+                continue;
+            };
+            responses.push(response);
+        }
+
+        if responses.is_empty() {
+            return Ok(None);
+        }
+
+        return Ok(Some(Value::Array(responses)));
+    }
+
+    handle_mcp_value(request)
+}
+
+fn handle_mcp_value(request: Value) -> Result<Option<serde_json::Value>> {
     let jsonrpc = request
         .get("jsonrpc")
         .and_then(Value::as_str)

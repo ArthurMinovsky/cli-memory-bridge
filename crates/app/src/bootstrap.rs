@@ -82,17 +82,38 @@ fn run_sync() -> Result<BootstrapSummary> {
 
             let transcript = import_for_provider(provider.provider, path)?;
             let conversation = transcript.into_conversation();
-            if !conversation.messages.is_empty()
-                && !storage.is_conversation_forgotten(
+            if !conversation.messages.is_empty() {
+                if storage.is_conversation_forgotten(
                     conversation.locator.provider,
                     &conversation.locator.conversation_id,
-                )?
-            {
-                pending_imports.push(PendingImport {
-                    source_path: source_path.clone(),
-                    fingerprint: fingerprint.clone(),
-                    conversation,
-                });
+                )? {
+                    storage.save_checkpoint(&Checkpoint {
+                        provider: provider.provider,
+                        source_path,
+                        fingerprint,
+                        updated_at: Utc::now(),
+                    })?;
+                    checkpoint_count += 1;
+                    continue;
+                }
+
+                if storage.conversation_exists(
+                    conversation.locator.provider,
+                    &conversation.locator.conversation_id,
+                )? {
+                    storage.save_conversation_state(
+                        conversation.locator.provider,
+                        &conversation.locator.conversation_id,
+                        &source_path,
+                        &fingerprint,
+                    )?;
+                } else {
+                    pending_imports.push(PendingImport {
+                        source_path: source_path.clone(),
+                        fingerprint: fingerprint.clone(),
+                        conversation,
+                    });
+                }
             }
             storage.save_checkpoint(&Checkpoint {
                 provider: provider.provider,

@@ -80,13 +80,13 @@ pub fn render_install_bundle(provider: ProviderKind, binary_path: &str) -> Resul
             "provider": provider.as_slug(),
             "mode": "config",
             "config_path": "~/.copilot/mcp-config.json",
-            "preferred_launcher": "npx",
-            "npx_snippet": json!({
+            "preferred_launcher": "global-command",
+            "global_command_snippet": json!({
                 "mcpServers": {
                     "cli-memory": {
                         "type": "local",
-                        "command": "npx",
-                        "args": ["-y", "@aminovsky/cli-memory", "serve"],
+                        "command": "cli-memory",
+                        "args": ["serve"],
                         "tools": ["*"],
                     }
                 }

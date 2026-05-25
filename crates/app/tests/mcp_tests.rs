@@ -232,3 +232,38 @@ fn framed_initialize_request_parses_and_returns_jsonrpc_response() {
     assert_eq!(response["id"], 99);
     assert_eq!(response["result"]["protocolVersion"], "2025-03-26");
 }
+
+#[test]
+fn batch_request_returns_responses_for_each_non_notification_message() {
+    let request = serde_json::json!([
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {}
+            }
+        },
+        {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {}
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {}
+        }
+    ]);
+
+    let response = cli_memory_app::mcp::handle_mcp_request(&request.to_string())
+        .expect("batch request should dispatch")
+        .expect("batch request should return a response");
+
+    let responses = response.as_array().expect("batch response should be an array");
+    assert_eq!(responses.len(), 2);
+    assert!(responses.iter().any(|item| item["id"] == 1));
+    assert!(responses.iter().any(|item| item["id"] == 2));
+}

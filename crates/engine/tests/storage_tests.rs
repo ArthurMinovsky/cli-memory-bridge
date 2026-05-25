@@ -199,3 +199,46 @@ fn forgotten_conversations_are_excluded_from_active_message_and_resume_views() {
         .expect("search should query")
         .is_empty());
 }
+
+#[test]
+fn resume_bundle_preserves_numeric_message_order() {
+    let tempdir = tempfile::tempdir().expect("temporary directory should be created");
+    let database_path = tempdir.path().join("engine.sqlite3");
+
+    let storage = Storage::open(&database_path).expect("storage should open");
+    storage
+        .initialize()
+        .expect("schema should initialize successfully");
+
+    let messages = (1..=10)
+        .map(|index| TranscriptMessage {
+            message_id: format!("msg-{index}"),
+            role: if index % 2 == 0 {
+                MessageRole::Assistant
+            } else {
+                MessageRole::User
+            },
+            content: format!("line {index}"),
+        })
+        .collect::<Vec<_>>();
+
+    storage
+        .save_transcript(&ConversationTranscript {
+            locator: ConversationLocator {
+                provider: ProviderKind::Codex,
+                conversation_id: "conv-ordered".to_owned(),
+            },
+            messages,
+        })
+        .expect("transcript should save");
+
+    let hash_id = derive_resume_hash(ProviderKind::Codex, "conv-ordered");
+    let bundle = storage
+        .resume_bundle(&hash_id)
+        .expect("resume should query")
+        .expect("resume bundle should exist");
+
+    let line_2 = bundle.find("line 2").expect("line 2 should exist");
+    let line_10 = bundle.find("line 10").expect("line 10 should exist");
+    assert!(line_2 < line_10);
+}

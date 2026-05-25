@@ -265,6 +265,25 @@ impl Storage {
             .context("failed to count conversations")
     }
 
+    pub fn conversation_exists(
+        &self,
+        provider: ProviderKind,
+        conversation_id: &str,
+    ) -> Result<bool> {
+        let count: i64 = self
+            .connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM conversations
+                 WHERE provider = ?1 AND conversation_id = ?2",
+                params![provider.as_slug(), conversation_id],
+                |row| row.get(0),
+            )
+            .context("failed to check whether conversation exists")?;
+
+        Ok(count > 0)
+    }
+
     pub fn count_active_conversations(&self) -> Result<i64> {
         self.connection
             .query_row(
@@ -527,7 +546,7 @@ impl Storage {
                 "SELECT role, content
                  FROM messages
                  WHERE provider = ?1 AND conversation_id = ?2
-                 ORDER BY message_id ASC",
+                 ORDER BY id ASC",
             )
             .context("failed to prepare resume query")?;
 
