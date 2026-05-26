@@ -113,12 +113,28 @@ function download(url, destPath) {
   });
 }
 
+function installedVersionMarkerPath() {
+  return vendorBinaryPath() + ".version";
+}
+
+function installedVersion() {
+  const marker = installedVersionMarkerPath();
+  if (!fs.existsSync(marker)) return null;
+  try { return fs.readFileSync(marker, "utf8").trim(); } catch { return null; }
+}
+
+function markInstalledVersion(version) {
+  try { fs.writeFileSync(installedVersionMarkerPath(), version, "utf8"); } catch {}
+}
+
 async function main() {
   const version = packageVersion();
   const destination = vendorBinaryPath();
   const override = explicitBinaryOverride();
 
-  if (fs.existsSync(destination)) {
+  // Skip only if both the binary exists AND its version marker matches.
+  // This prevents stale binaries from surviving an npm package upgrade.
+  if (fs.existsSync(destination) && installedVersion() === version) {
     return;
   }
 
@@ -129,6 +145,7 @@ async function main() {
     }
 
     copyLocalBinary(override, destination);
+    markInstalledVersion(version);
     return;
   }
 
@@ -147,6 +164,7 @@ async function main() {
     if (process.platform !== "win32") {
       fs.chmodSync(destination, 0o755);
     }
+    markInstalledVersion(version);
   } catch (error) {
     console.error("cli-memory: failed to install bundled binary");
     console.error(error.message);
