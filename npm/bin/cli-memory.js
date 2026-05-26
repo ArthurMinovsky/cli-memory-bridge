@@ -2,7 +2,10 @@
 
 const fs = require("fs");
 const path = require("path");
-const { spawnSync } = require("child_process");
+// Use async spawn so stdin/stdout are streamed in real-time.
+// spawnSync buffers all I/O until the child exits, which breaks the MCP
+// JSON-RPC handshake for the long-running `serve` subcommand.
+const { spawn } = require("child_process");
 const { binaryName, platformKey } = require("../platform");
 
 function candidateBinaries() {
@@ -50,14 +53,25 @@ if (!binary) {
   process.exit(1);
 }
 
-const result = spawnSync(binary, process.argv.slice(2), {
-  stdio: "inherit",
+const child = spawn(binary, process.argv.slice(2), {
+  stdio: "inherit", // stream stdin/stdout/stderr directly — no buffering
 });
 
-if (result.error) {
+child.on("error", (err) => {
   console.error(`cli-memory: failed to launch ${binary}`);
-  console.error(result.error.message);
+  console.error(err.message);
   process.exit(1);
+});
+
+// Forward signals so Ctrl-C / SIGTERM reach the child correctly.
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => child.kill(sig));
 }
 
-process.exit(result.status ?? 1);
+child.on("exit", (code, signal) => {
+  if (signal) {
+    process.kill(process.pid, signal);
+  } else {
+    process.exit(code ?? 1);
+  }
+});
