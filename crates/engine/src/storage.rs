@@ -570,23 +570,36 @@ impl Storage {
     }
 
     pub fn search_conversations(&self, query: &str, limit: usize) -> Result<Vec<String>> {
-        let like = format!("%{query}%");
+        let terms: Vec<String> = query.split_whitespace().map(|s| format!("%{}%", s)).collect();
         let limit = i64::try_from(limit).context("search limit is too large")?;
+
+        let mut sql = String::from(
+            "SELECT DISTINCT m.provider, m.conversation_id, m.content
+             FROM messages m
+             LEFT JOIN conversation_states cs
+                ON cs.provider = m.provider AND cs.conversation_id = m.conversation_id
+             WHERE cs.forgotten_at IS NULL",
+        );
+
+        for i in 0..terms.len() {
+            sql.push_str(&format!(" AND m.content LIKE ?{}", i + 1));
+        }
+
+        sql.push_str(&format!(" ORDER BY m.provider ASC, m.conversation_id ASC LIMIT ?{}", terms.len() + 1));
+
         let mut statement = self
             .connection
-            .prepare(
-                "SELECT DISTINCT m.provider, m.conversation_id, m.content
-                 FROM messages m
-                 LEFT JOIN conversation_states cs
-                    ON cs.provider = m.provider AND cs.conversation_id = m.conversation_id
-                 WHERE m.content LIKE ?1 AND cs.forgotten_at IS NULL
-                 ORDER BY m.provider ASC, m.conversation_id ASC
-                 LIMIT ?2",
-            )
+            .prepare(&sql)
             .context("failed to prepare conversation search query")?;
 
+        let mut params_vec: Vec<&dyn rusqlite::ToSql> = Vec::new();
+        for term in &terms {
+            params_vec.push(term);
+        }
+        params_vec.push(&limit);
+
         let rows = statement
-            .query_map(params![like, limit], |row| {
+            .query_map(rusqlite::params_from_iter(params_vec), |row| {
                 Ok(format!(
                     "[{}:{}] {}",
                     row.get::<_, String>(0)?,

@@ -312,14 +312,9 @@ impl CliMemoryMcpServer {
         Parameters(SearchConversationsArgs { query, limit }): Parameters<SearchConversationsArgs>,
     ) -> std::result::Result<String, ErrorData> {
         let _ = run_refresh();
-        let mut locked = self.retrieval.write().unwrap();
-        if locked.is_none() {
-            let storage = Storage::open(&self.db_path).map_err(internal_error)?;
-            *locked = Some(RetrievalService::from_storage(&storage).map_err(internal_error)?);
-        }
-        let service = locked.as_ref().unwrap();
+        let storage = Storage::open(&self.db_path).map_err(internal_error)?;
+        let results = storage.search_conversations(&query, limit.unwrap_or(10)).map_err(internal_error)?;
         
-        let results = service.search_lines(&query, limit.unwrap_or(10)).map_err(internal_error)?;
         render_json(json!({
             "status": "ok",
             "query": query,
@@ -450,7 +445,7 @@ impl CliMemoryMcpServer {
 
 #[tool_handler(
     name = "cli-memory",
-    version = "0.1.12",
+    version = "0.1.13",
     instructions = "Local cross-CLI memory retrieval server."
 )]
 impl ServerHandler for CliMemoryMcpServer {}
