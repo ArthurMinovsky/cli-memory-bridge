@@ -269,12 +269,14 @@ pub fn memory_stats(db_path: impl AsRef<Path>) -> Result<Value> {
 #[derive(Clone)]
 struct CliMemoryMcpServer {
     db_path: PathBuf,
+    retrieval: std::sync::Arc<std::sync::RwLock<Option<cli_memory_engine::RetrievalService>>>,
 }
 
 impl CliMemoryMcpServer {
     fn new() -> Result<Self> {
         Ok(Self {
             db_path: configured_db_path()?,
+            retrieval: std::sync::Arc::new(std::sync::RwLock::new(None)),
         })
     }
 }
@@ -309,9 +311,20 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(SearchConversationsArgs { query, limit }): Parameters<SearchConversationsArgs>,
     ) -> std::result::Result<String, ErrorData> {
-        render_json(
-            search_conversations(&self.db_path, &query, limit.unwrap_or(10)).map_err(internal_error)?,
-        )
+        let _ = run_refresh();
+        let mut locked = self.retrieval.write().unwrap();
+        if locked.is_none() {
+            let storage = Storage::open(&self.db_path).map_err(internal_error)?;
+            *locked = Some(RetrievalService::from_storage(&storage).map_err(internal_error)?);
+        }
+        let service = locked.as_ref().unwrap();
+        
+        let results = service.search_lines(&query, limit.unwrap_or(10)).map_err(internal_error)?;
+        render_json(json!({
+            "status": "ok",
+            "query": query,
+            "results": results,
+        }))
     }
 
     #[tool(name = "context-bundle", description = "Build a retrieval bundle for a query.")]
@@ -319,8 +332,16 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(GetContextBundleArgs { query, char_budget }): Parameters<GetContextBundleArgs>,
     ) -> std::result::Result<String, ErrorData> {
+        let _ = run_refresh();
+        let mut locked = self.retrieval.write().unwrap();
+        if locked.is_none() {
+            let storage = Storage::open(&self.db_path).map_err(internal_error)?;
+            *locked = Some(RetrievalService::from_storage(&storage).map_err(internal_error)?);
+        }
+        let service = locked.as_ref().unwrap();
+        
         render_json(
-            get_context_bundle(&self.db_path, &query, char_budget.unwrap_or(1200))
+            context_bundle_with_service(&service, &query, char_budget.unwrap_or(1200))
                 .map_err(internal_error)?,
         )
     }
@@ -429,7 +450,7 @@ impl CliMemoryMcpServer {
 
 #[tool_handler(
     name = "cli-memory",
-    version = "0.1.11",
+    version = "0.1.12",
     instructions = "Local cross-CLI memory retrieval server."
 )]
 impl ServerHandler for CliMemoryMcpServer {}
@@ -443,6 +464,21 @@ pub fn serve_stdio() -> Result<()> {
 
     runtime.block_on(async {
         let server = CliMemoryMcpServer::new()?;
+        
+        let retrieval_cache = server.retrieval.clone();
+        let db_path = server.db_path.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Ok(storage) = Storage::open(&db_path) {
+                if let Ok(service) = RetrievalService::from_storage(&storage) {
+                    if let Ok(mut locked) = retrieval_cache.write() {
+                        if locked.is_none() {
+                            *locked = Some(service);
+                        }
+                    }
+                }
+            }
+        });
+
         let service = server.serve(stdio()).await?;
         service.waiting().await?;
         Ok(())

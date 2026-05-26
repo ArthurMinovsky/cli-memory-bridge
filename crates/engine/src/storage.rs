@@ -529,7 +529,7 @@ impl Storage {
                  FROM conversations c
                  LEFT JOIN conversation_states cs
                     ON cs.provider = c.provider AND cs.conversation_id = c.conversation_id
-                 WHERE c.resume_hash = ?1 AND cs.forgotten_at IS NULL",
+                 WHERE (c.resume_hash = ?1 OR c.conversation_id = ?1) AND cs.forgotten_at IS NULL",
                 params![resume_hash],
                 |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             );
