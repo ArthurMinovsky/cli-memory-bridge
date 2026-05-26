@@ -312,8 +312,38 @@ impl CliMemoryMcpServer {
         Parameters(SearchConversationsArgs { query, limit }): Parameters<SearchConversationsArgs>,
     ) -> std::result::Result<String, ErrorData> {
         let _ = run_refresh();
+        let target_limit = limit.unwrap_or(10);
+        let fetch_limit = std::cmp::max(target_limit * 3, 12);
+        
         let storage = Storage::open(&self.db_path).map_err(internal_error)?;
-        let results = storage.search_conversations(&query, limit.unwrap_or(10)).map_err(internal_error)?;
+        let keyword_hits = storage.search_conversations(&query, fetch_limit).unwrap_or_default();
+        
+        let mut semantic_hits = Vec::new();
+        if let Ok(locked) = self.retrieval.read() {
+            if let Some(service) = locked.as_ref() {
+                semantic_hits = service.search_lines(&query, fetch_limit).unwrap_or_default();
+            }
+        }
+        
+        let mut merged: std::collections::HashMap<String, (f32, f32)> = std::collections::HashMap::new();
+        
+        for (rank, hit) in keyword_hits.into_iter().enumerate() {
+            let score = 1.0 / (rank as f32 + 1.0);
+            merged.entry(hit).or_insert((0.0, 0.0)).0 = score;
+        }
+        
+        for (rank, hit) in semantic_hits.into_iter().enumerate() {
+            let score = 1.0 / (rank as f32 + 1.0);
+            merged.entry(hit).or_insert((0.0, 0.0)).1 = score;
+        }
+        
+        let mut ranked: Vec<(String, f32)> = merged.into_iter().map(|(hit, (k_score, s_score))| {
+            (hit, k_score + s_score)
+        }).collect();
+        
+        ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        
+        let results: Vec<String> = ranked.into_iter().take(target_limit).map(|(hit, _)| hit).collect();
         
         render_json(json!({
             "status": "ok",
@@ -445,7 +475,7 @@ impl CliMemoryMcpServer {
 
 #[tool_handler(
     name = "cli-memory",
-    version = "0.1.13",
+    version = "0.1.14",
     instructions = "Local cross-CLI memory retrieval server."
 )]
 impl ServerHandler for CliMemoryMcpServer {}
