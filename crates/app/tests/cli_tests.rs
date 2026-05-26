@@ -903,6 +903,52 @@ fn refresh_updates_existing_checkpoint_without_duplicates() {
 }
 
 #[test]
+fn resume_reports_exact_source_matches_when_hash_is_not_imported() {
+    let home = tempfile::tempdir().expect("temporary directory should be created");
+    let data_dir = tempfile::tempdir().expect("temporary data directory should be created");
+    let model_dir = tempfile::tempdir().expect("temporary model directory should be created");
+    let codex_session = home.path().join(".codex/sessions/session.jsonl");
+    let missing_hash = "target-hash-123";
+
+    std::fs::create_dir_all(home.path().join(".codex/sessions"))
+        .expect("Codex sessions directory should be created");
+    std::fs::write(home.path().join(".codex/session_index.jsonl"), "{}\n")
+        .expect("Codex session index should be written");
+    std::fs::write(
+        &codex_session,
+        format!(
+            "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"other-conversation\"}}}}\n{{\"type\":\"note\",\"payload\":{{\"text\":\"{}\"}}}}\n",
+            missing_hash
+        ),
+    )
+    .expect("Codex transcript source should be written");
+
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+        .arg("init")
+        .env("CLI_MEMORY_HOME", home.path())
+        .env("CLI_MEMORY_DATA_DIR", data_dir.path())
+        .env("CLI_MEMORY_MODEL_PATH", model_dir.path())
+        .output()
+        .expect("init should run");
+    assert!(init.status.success());
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+        .args(["resume", missing_hash])
+        .env("CLI_MEMORY_HOME", home.path())
+        .env("CLI_MEMORY_DATA_DIR", data_dir.path())
+        .env("CLI_MEMORY_MODEL_PATH", model_dir.path())
+        .output()
+        .expect("resume should run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no conversation found for target-hash-123"));
+    assert!(stdout.contains("exact source matches:"));
+    assert!(stdout.contains("[codex]"));
+    assert!(stdout.contains("session.jsonl"));
+}
+
+#[test]
 fn refresh_imports_only_new_conversations_after_init() {
     let home = tempfile::tempdir().expect("temporary directory should be created");
     let data_dir = tempfile::tempdir().expect("temporary data directory should be created");

@@ -54,6 +54,12 @@ pub struct ConversationStateRow {
     pub ban_reason: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceLocationRow {
+    pub provider: ProviderKind,
+    pub source_path: String,
+}
+
 impl Storage {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let connection = Connection::open(path).context("failed to open SQLite storage")?;
@@ -647,6 +653,38 @@ impl Storage {
 
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .context("failed to read conversation state rows")
+    }
+
+    pub fn known_source_locations(&self) -> Result<Vec<SourceLocationRow>> {
+        use std::collections::BTreeSet;
+
+        let mut seen = BTreeSet::new();
+        let mut rows = Vec::new();
+        for checkpoint in self.list_checkpoints()? {
+            let slug = checkpoint.provider.as_slug().to_owned();
+            let source_path = checkpoint.source_path;
+            if seen.insert((slug, source_path.clone())) {
+                rows.push(SourceLocationRow {
+                    provider: checkpoint.provider,
+                    source_path,
+                });
+            }
+        }
+        for state in self.conversation_states()? {
+            if state.source_path.is_empty() {
+                continue;
+            }
+            let slug = state.provider.as_slug().to_owned();
+            let source_path = state.source_path;
+            if seen.insert((slug, source_path.clone())) {
+                rows.push(SourceLocationRow {
+                    provider: state.provider,
+                    source_path,
+                });
+            }
+        }
+
+        Ok(rows)
     }
 
     pub fn delete_history(&self, provider: ProviderKind, resume_hash: &str) -> Result<bool> {

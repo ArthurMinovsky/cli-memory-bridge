@@ -1,3 +1,9 @@
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::{Path, PathBuf},
+};
+
 use clap::Parser;
 use cli_memory_app::bootstrap::{configured_db_path, run_init, run_refresh};
 use cli_memory_app::cli::{Cli, Commands};
@@ -84,7 +90,17 @@ fn main() {
                 .expect("resume query should succeed")
             {
                 Some(bundle) => println!("{bundle}"),
-                None => println!("no conversation found for {hash_id}"),
+                None => {
+                    println!("no conversation found for {hash_id}");
+                    let matches = find_exact_source_matches(&storage, &hash_id)
+                        .expect("source match lookup should succeed");
+                    if !matches.is_empty() {
+                        println!("exact source matches:");
+                        for source_match in matches {
+                            println!("{source_match}");
+                        }
+                    }
+                }
             }
         }
         Commands::Forget { provider, hash_id } => {
@@ -130,5 +146,50 @@ fn main() {
                 serde_json::to_string_pretty(&value).expect("stats output should serialize")
             );
         }
+    }
+}
+
+fn find_exact_source_matches(storage: &Storage, needle: &str) -> anyhow::Result<Vec<String>> {
+    let mut matches = BTreeSet::new();
+    for source in storage.known_source_locations()? {
+        let path = PathBuf::from(&source.source_path);
+        if path.is_file() {
+            if file_contains_exact(&path, needle) {
+                matches.insert(format!("[{}] {}", source.provider.as_slug(), path.display()));
+            }
+            continue;
+        }
+
+        if path.is_dir() {
+            collect_exact_matches(&path, needle, source.provider.as_slug(), &mut matches)?;
+        }
+    }
+
+    Ok(matches.into_iter().collect())
+}
+
+fn collect_exact_matches(
+    dir: &Path,
+    needle: &str,
+    provider_slug: &str,
+    out: &mut BTreeSet<String>,
+) -> anyhow::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_exact_matches(&path, needle, provider_slug, out)?;
+        } else if file_contains_exact(&path, needle) {
+            out.insert(format!("[{provider_slug}] {}", path.display()));
+        }
+    }
+
+    Ok(())
+}
+
+fn file_contains_exact(path: &Path, needle: &str) -> bool {
+    match fs::read(path) {
+        Ok(bytes) => String::from_utf8_lossy(&bytes).contains(needle),
+        Err(_) => false,
     }
 }
