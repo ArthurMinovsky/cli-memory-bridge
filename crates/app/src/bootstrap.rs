@@ -141,7 +141,7 @@ fn run_sync() -> Result<BootstrapSummary> {
     }
 
     if !pending_imports.is_empty() {
-        let embedder = Embedder::model2vec_default().unwrap_or_else(|_| Embedder::hashing(128));
+        let embedder = Embedder::global();
         let texts = pending_imports
             .iter()
             .flat_map(|item| item.conversation.messages.iter().map(|message| message.content.clone()))

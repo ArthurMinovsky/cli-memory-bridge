@@ -3,14 +3,16 @@ use model2vec_rs::model::StaticModel;
 
 use crate::model_cache::resolve_model_dir;
 
+#[derive(Clone)]
 pub struct Embedder {
     dim: usize,
     backend: Backend,
 }
 
+#[derive(Clone)]
 enum Backend {
     Hashing,
-    Model2Vec(StaticModel),
+    Model2Vec(std::sync::Arc<StaticModel>),
 }
 
 impl Embedder {
@@ -32,8 +34,15 @@ impl Embedder {
 
         Ok(Self {
             dim,
-            backend: Backend::Model2Vec(model),
+            backend: Backend::Model2Vec(std::sync::Arc::new(model)),
         })
+    }
+
+    pub fn global() -> Self {
+        static GLOBAL_EMBEDDER: std::sync::OnceLock<Embedder> = std::sync::OnceLock::new();
+        GLOBAL_EMBEDDER.get_or_init(|| {
+            Self::model2vec_default().unwrap_or_else(|_| Self::hashing(128))
+        }).clone()
     }
 
     pub fn dimension(&self) -> usize {

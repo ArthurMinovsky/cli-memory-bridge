@@ -34,7 +34,7 @@ impl RetrievalService {
     }
 
     pub fn production() -> Result<Self> {
-        let embedder = Embedder::model2vec_default().unwrap_or_else(|_| Embedder::hashing(128));
+        let embedder = Embedder::global();
         let index = VectorStore::new(embedder.dimension())?;
         Ok(Self {
             embedder,
@@ -45,7 +45,7 @@ impl RetrievalService {
     }
 
     pub fn from_storage(storage: &Storage) -> Result<Self> {
-        let embedder = Embedder::model2vec_default().unwrap_or_else(|_| Embedder::hashing(128));
+        let embedder = Embedder::global();
         Self::from_storage_with_embedder(storage, embedder)
     }
 

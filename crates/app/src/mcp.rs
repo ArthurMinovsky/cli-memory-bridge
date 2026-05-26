@@ -164,7 +164,7 @@ pub fn save_message(
 ) -> Result<Value> {
     let storage = Storage::open(db_path)?;
     storage.save_message(provider, conversation_id, message_id, role, content)?;
-    let embedder = Embedder::model2vec_default().unwrap_or_else(|_| Embedder::hashing(128));
+    let embedder = Embedder::global();
     let vector = embedder.embed_documents(&[content.to_owned()])?;
     storage.save_message_embedding(provider, conversation_id, message_id, &vector[0])?;
     Ok(json!({
@@ -429,7 +429,7 @@ impl CliMemoryMcpServer {
 
 #[tool_handler(
     name = "cli-memory",
-    version = "0.1.10",
+    version = "0.1.11",
     instructions = "Local cross-CLI memory retrieval server."
 )]
 impl ServerHandler for CliMemoryMcpServer {}
