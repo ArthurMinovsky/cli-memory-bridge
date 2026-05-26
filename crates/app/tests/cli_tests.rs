@@ -38,7 +38,7 @@ fn help_lists_resume_and_conv_search() {
 fn codex_resume_skill_contains_resume_instruction() {
     let text = cli_memory_integrations::render_codex_resume_skill();
     assert!(text.contains("$resume"));
-    assert!(text.contains("resume_conversation"));
+    assert!(text.contains("`resume`"));
 }
 
 #[test]
@@ -52,14 +52,14 @@ fn codex_forget_skill_contains_provider_scoped_instruction() {
 fn codex_conv_search_skill_contains_search_instruction() {
     let text = cli_memory_integrations::render_codex_conv_search_skill();
     assert!(text.contains("$conv-search"));
-    assert!(text.contains("search_conversations"));
+    assert!(text.contains("`conv-search`"));
 }
 
 #[test]
 fn claude_conv_search_command_contains_search_instruction() {
     let text = cli_memory_integrations::render_claude_conv_search_command();
     assert!(text.contains("/conv-search"));
-    assert!(text.contains("search_conversations"));
+    assert!(text.contains("`conv-search`"));
 }
 
 #[test]

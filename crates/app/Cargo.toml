@@ -1,6 +1,6 @@
 [package]
 name = "cli-memory-app"
-version = "0.1.5"
+version = "0.1.7"
 edition = "2024"
 
 [[bin]]
@@ -14,8 +14,10 @@ cli-memory-core = { path = "../core" }
 cli-memory-engine = { path = "../engine" }
 cli-memory-integrations = { path = "../integrations" }
 chrono.workspace = true
+rmcp = { version = "1.7.0", features = ["server", "transport-io", "schemars"] }
 serde.workspace = true
 serde_json.workspace = true
+tokio = { version = "1", features = ["rt", "macros"] }
 
 [dev-dependencies]
 cli-memory-core = { path = "../core" }

@@ -128,15 +128,15 @@ fn run_sync() -> Result<BootstrapSummary> {
                         conversation,
                     });
                 }
-
-                storage.save_checkpoint(&Checkpoint {
-                    provider: provider.provider,
-                    source_path,
-                    fingerprint,
-                    updated_at: Utc::now(),
-                })?;
-                checkpoint_count += 1;
             }
+
+            storage.save_checkpoint(&Checkpoint {
+                provider: provider.provider,
+                source_path,
+                fingerprint,
+                updated_at: Utc::now(),
+            })?;
+            checkpoint_count += 1;
         }
     }
 

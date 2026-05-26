@@ -1,12 +1,21 @@
-use std::{
-    io::{self, BufRead, BufReader, Write},
-    path::Path,
-};
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use chrono::Utc;
 use cli_memory_core::{ProviderKind, models::MessageRole};
 use cli_memory_engine::{Embedder, RetrievalService, Storage};
+use rmcp::{
+    ErrorData,
+    ServerHandler,
+    ServiceExt,
+    handler::server::wrapper::Parameters,
+    schemars::{self, JsonSchema},
+    tool,
+    tool_handler,
+    tool_router,
+    transport::stdio,
+};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
@@ -14,9 +23,7 @@ use crate::{
     doctor,
 };
 
-const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
-
-pub fn health_check(status: &crate::doctor::DoctorStatus) -> serde_json::Value {
+pub fn health_check(status: &crate::doctor::DoctorStatus) -> Value {
     json!({
         "status": "ok",
         "db_ready": status.db_ready,
@@ -30,7 +37,7 @@ pub fn get_context_bundle(
     db_path: impl AsRef<Path>,
     query: &str,
     char_budget: usize,
-) -> Result<serde_json::Value> {
+) -> Result<Value> {
     let _ = run_refresh();
     let storage = Storage::open(db_path)?;
     let service = RetrievalService::from_storage(&storage)?;
@@ -41,7 +48,7 @@ pub fn context_bundle_with_service(
     service: &RetrievalService,
     query: &str,
     char_budget: usize,
-) -> Result<serde_json::Value> {
+) -> Result<Value> {
     let bundle = service.context_bundle(query, char_budget)?;
     Ok(json!({
         "status": "ok",
@@ -55,7 +62,7 @@ pub fn context_bundle_with_hashing_service(
     db_path: impl AsRef<Path>,
     query: &str,
     char_budget: usize,
-) -> Result<serde_json::Value> {
+) -> Result<Value> {
     let storage = Storage::open(db_path)?;
     let service = RetrievalService::from_storage_with_embedder(&storage, Embedder::hashing(128))?;
     let bundle = service.context_bundle(query, char_budget)?;
@@ -67,7 +74,7 @@ pub fn context_bundle_with_hashing_service(
     }))
 }
 
-pub fn discover_providers() -> Result<serde_json::Value> {
+pub fn discover_providers() -> Result<Value> {
     let home = configured_home()?;
     let detected = cli_memory_integrations::detect_providers(&home)?;
     Ok(json!({
@@ -81,7 +88,7 @@ pub fn discover_providers() -> Result<serde_json::Value> {
     }))
 }
 
-pub fn refresh_imports() -> Result<serde_json::Value> {
+pub fn refresh_imports() -> Result<Value> {
     let summary = run_refresh()?;
     Ok(json!({
         "status": "ok",
@@ -93,7 +100,7 @@ pub fn refresh_imports() -> Result<serde_json::Value> {
     }))
 }
 
-pub fn resume_conversation(db_path: impl AsRef<Path>, hash_id: &str) -> Result<serde_json::Value> {
+pub fn resume_conversation(db_path: impl AsRef<Path>, hash_id: &str) -> Result<Value> {
     let _ = run_refresh();
     let storage = Storage::open(db_path)?;
     let bundle = storage.resume_bundle(hash_id)?;
@@ -108,7 +115,7 @@ pub fn search_conversations(
     db_path: impl AsRef<Path>,
     query: &str,
     limit: usize,
-) -> Result<serde_json::Value> {
+) -> Result<Value> {
     let _ = run_refresh();
     let storage = Storage::open(db_path)?;
     let service = RetrievalService::from_storage(&storage)?;
@@ -120,10 +127,7 @@ pub fn search_conversations(
     }))
 }
 
-pub fn get_recent_history(
-    db_path: impl AsRef<Path>,
-    limit: usize,
-) -> Result<serde_json::Value> {
+pub fn get_recent_history(db_path: impl AsRef<Path>, limit: usize) -> Result<Value> {
     let storage = Storage::open(db_path)?;
     let messages = storage.list_recent_messages(limit)?;
     Ok(json!({
@@ -140,11 +144,7 @@ pub fn get_recent_history(
     }))
 }
 
-pub fn search_history(
-    db_path: impl AsRef<Path>,
-    query: &str,
-    limit: usize,
-) -> Result<serde_json::Value> {
+pub fn search_history(db_path: impl AsRef<Path>, query: &str, limit: usize) -> Result<Value> {
     let storage = Storage::open(db_path)?;
     let results = storage.search_conversations(query, limit)?;
     Ok(json!({
@@ -161,7 +161,7 @@ pub fn save_message(
     message_id: &str,
     role: MessageRole,
     content: &str,
-) -> Result<serde_json::Value> {
+) -> Result<Value> {
     let storage = Storage::open(db_path)?;
     storage.save_message(provider, conversation_id, message_id, role, content)?;
     let embedder = Embedder::model2vec_default().unwrap_or_else(|_| Embedder::hashing(128));
@@ -181,7 +181,7 @@ pub fn save_conversation_turn(
     conversation_id: &str,
     user_message: &str,
     assistant_message: &str,
-) -> Result<serde_json::Value> {
+) -> Result<Value> {
     let millis = Utc::now().timestamp_millis();
     let user_id = format!("user-{millis}");
     let assistant_id = format!("assistant-{millis}");
@@ -213,7 +213,7 @@ pub fn forget_conversation(
     db_path: impl AsRef<Path>,
     provider: ProviderKind,
     hash_id: &str,
-) -> Result<serde_json::Value> {
+) -> Result<Value> {
     let storage = Storage::open(db_path)?;
     let forgotten = storage.forget_conversation(provider, hash_id)?;
     Ok(json!({
@@ -228,7 +228,7 @@ pub fn delete_history(
     db_path: impl AsRef<Path>,
     provider: ProviderKind,
     hash_id: &str,
-) -> Result<serde_json::Value> {
+) -> Result<Value> {
     let storage = Storage::open(db_path)?;
     let deleted = storage.delete_history(provider, hash_id)?;
     Ok(json!({
@@ -243,7 +243,7 @@ pub fn clear_session(
     db_path: impl AsRef<Path>,
     provider: ProviderKind,
     hash_id: &str,
-) -> Result<serde_json::Value> {
+) -> Result<Value> {
     let storage = Storage::open(db_path)?;
     let cleared = storage.clear_session(provider, hash_id)?;
     Ok(json!({
@@ -254,7 +254,7 @@ pub fn clear_session(
     }))
 }
 
-pub fn memory_stats(db_path: impl AsRef<Path>) -> Result<serde_json::Value> {
+pub fn memory_stats(db_path: impl AsRef<Path>) -> Result<Value> {
     let storage = Storage::open(db_path)?;
     Ok(json!({
         "status": "ok",
@@ -266,438 +266,250 @@ pub fn memory_stats(db_path: impl AsRef<Path>) -> Result<serde_json::Value> {
     }))
 }
 
+#[derive(Clone)]
+struct CliMemoryMcpServer {
+    db_path: PathBuf,
+}
+
+impl CliMemoryMcpServer {
+    fn new() -> Result<Self> {
+        Ok(Self {
+            db_path: configured_db_path()?,
+        })
+    }
+}
+
+#[tool_router]
+impl CliMemoryMcpServer {
+    #[tool(name = "doctor", description = "Return cli-memory server and storage health.")]
+    fn health_check(&self) -> std::result::Result<String, ErrorData> {
+        render_json(health_check(&doctor::inspect().map_err(internal_error)?))
+    }
+
+    #[tool(name = "discover-providers", description = "Detect supported local transcript providers on this machine.")]
+    fn discover_providers(&self) -> std::result::Result<String, ErrorData> {
+        render_json(discover_providers().map_err(internal_error)?)
+    }
+
+    #[tool(name = "refresh", description = "Incrementally import newly changed conversation sources.")]
+    fn refresh_imports(&self) -> std::result::Result<String, ErrorData> {
+        render_json(refresh_imports().map_err(internal_error)?)
+    }
+
+    #[tool(name = "resume", description = "Resume a stored conversation transcript by stable hash id.")]
+    fn resume_conversation(
+        &self,
+        Parameters(ResumeConversationArgs { hash_id }): Parameters<ResumeConversationArgs>,
+    ) -> std::result::Result<String, ErrorData> {
+        render_json(resume_conversation(&self.db_path, &hash_id).map_err(internal_error)?)
+    }
+
+    #[tool(name = "conv-search", description = "Search imported conversation content.")]
+    fn search_conversations(
+        &self,
+        Parameters(SearchConversationsArgs { query, limit }): Parameters<SearchConversationsArgs>,
+    ) -> std::result::Result<String, ErrorData> {
+        render_json(
+            search_conversations(&self.db_path, &query, limit.unwrap_or(10)).map_err(internal_error)?,
+        )
+    }
+
+    #[tool(name = "context-bundle", description = "Build a retrieval bundle for a query.")]
+    fn get_context_bundle(
+        &self,
+        Parameters(GetContextBundleArgs { query, char_budget }): Parameters<GetContextBundleArgs>,
+    ) -> std::result::Result<String, ErrorData> {
+        render_json(
+            get_context_bundle(&self.db_path, &query, char_budget.unwrap_or(1200))
+                .map_err(internal_error)?,
+        )
+    }
+
+    #[tool(name = "recent-history", description = "Return recent stored messages.")]
+    fn get_recent_history(
+        &self,
+        Parameters(GetRecentHistoryArgs { limit }): Parameters<GetRecentHistoryArgs>,
+    ) -> std::result::Result<String, ErrorData> {
+        render_json(get_recent_history(&self.db_path, limit.unwrap_or(20)).map_err(internal_error)?)
+    }
+
+    #[tool(name = "search-history", description = "Run storage-backed conversation search.")]
+    fn search_history(
+        &self,
+        Parameters(SearchHistoryArgs { query, limit }): Parameters<SearchHistoryArgs>,
+    ) -> std::result::Result<String, ErrorData> {
+        render_json(search_history(&self.db_path, &query, limit.unwrap_or(10)).map_err(internal_error)?)
+    }
+
+    #[tool(name = "save-message", description = "Save a single provider-scoped message into memory.")]
+    fn save_message(
+        &self,
+        Parameters(args): Parameters<SaveMessageArgs>,
+    ) -> std::result::Result<String, ErrorData> {
+        render_json(
+            save_message(
+                &self.db_path,
+                parse_provider(&args.provider).map_err(invalid_params)?,
+                &args.conversation_id,
+                &args.message_id,
+                parse_role(&args.role).map_err(invalid_params)?,
+                &args.content,
+            )
+            .map_err(internal_error)?,
+        )
+    }
+
+    #[tool(name = "save-conversation-turn", description = "Save a user/assistant turn pair.")]
+    fn save_conversation_turn(
+        &self,
+        Parameters(args): Parameters<SaveConversationTurnArgs>,
+    ) -> std::result::Result<String, ErrorData> {
+        render_json(
+            save_conversation_turn(
+                &self.db_path,
+                parse_provider(&args.provider).map_err(invalid_params)?,
+                &args.conversation_id,
+                &args.user_message,
+                &args.assistant_message,
+            )
+            .map_err(internal_error)?,
+        )
+    }
+
+    #[tool(name = "forget", description = "Soft-ban a conversation from future retrieval.")]
+    fn forget_conversation(
+        &self,
+        Parameters(ProviderHashArgs { provider, hash_id }): Parameters<ProviderHashArgs>,
+    ) -> std::result::Result<String, ErrorData> {
+        render_json(
+            forget_conversation(
+                &self.db_path,
+                parse_provider(&provider).map_err(invalid_params)?,
+                &hash_id,
+            )
+            .map_err(internal_error)?,
+        )
+    }
+
+    #[tool(name = "delete-history", description = "Delete a provider-scoped conversation from local storage.")]
+    fn delete_history(
+        &self,
+        Parameters(ProviderHashArgs { provider, hash_id }): Parameters<ProviderHashArgs>,
+    ) -> std::result::Result<String, ErrorData> {
+        render_json(
+            delete_history(
+                &self.db_path,
+                parse_provider(&provider).map_err(invalid_params)?,
+                &hash_id,
+            )
+            .map_err(internal_error)?,
+        )
+    }
+
+    #[tool(name = "clear-session", description = "Clear a provider-scoped session transcript while keeping indexes coherent.")]
+    fn clear_session(
+        &self,
+        Parameters(ProviderHashArgs { provider, hash_id }): Parameters<ProviderHashArgs>,
+    ) -> std::result::Result<String, ErrorData> {
+        render_json(
+            clear_session(
+                &self.db_path,
+                parse_provider(&provider).map_err(invalid_params)?,
+                &hash_id,
+            )
+            .map_err(internal_error)?,
+        )
+    }
+
+    #[tool(name = "stats", description = "Return memory database counts and embedding totals.")]
+    fn memory_stats(&self) -> std::result::Result<String, ErrorData> {
+        render_json(memory_stats(&self.db_path).map_err(internal_error)?)
+    }
+}
+
+#[tool_handler(
+    name = "cli-memory",
+    version = "0.1.7",
+    instructions = "Local cross-CLI memory retrieval server."
+)]
+impl ServerHandler for CliMemoryMcpServer {}
+
 pub fn serve_stdio() -> Result<()> {
-    let stdin = io::stdin();
-    let mut stdout = io::stdout();
-    let mut reader = BufReader::new(stdin.lock());
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("failed to build tokio runtime for MCP server")?;
 
-    while let Some(message) = read_framed_message(&mut reader)? {
-        match handle_mcp_request(&message) {
-            Ok(Some(response)) => {
-                write_framed_message(&mut stdout, &response)?;
-                stdout.flush()?;
-            }
-            Ok(None) => {}
-            Err(error) => {
-                let response = jsonrpc_error_response(None, -32603, &error.to_string());
-                write_framed_message(&mut stdout, &response)?;
-                stdout.flush()?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-pub fn handle_mcp_request(line: &str) -> Result<Option<serde_json::Value>> {
-    let request: Value = serde_json::from_str(line).context("invalid JSON request")?;
-    if let Some(items) = request.as_array() {
-        let mut responses = Vec::new();
-        for item in items {
-            let Some(response) = handle_mcp_value(item.clone())? else {
-                continue;
-            };
-            responses.push(response);
-        }
-
-        if responses.is_empty() {
-            return Ok(None);
-        }
-
-        return Ok(Some(Value::Array(responses)));
-    }
-
-    handle_mcp_value(request)
-}
-
-fn handle_mcp_value(request: Value) -> Result<Option<serde_json::Value>> {
-    let jsonrpc = request
-        .get("jsonrpc")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("request is missing jsonrpc"))?;
-    if jsonrpc != "2.0" {
-        return Err(anyhow!("invalid jsonrpc version: {jsonrpc}"));
-    }
-
-    let method = request
-        .get("method")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("request is missing method"))?;
-    let id = request.get("id").cloned();
-    let params = request.get("params").cloned().unwrap_or_else(|| json!({}));
-
-    match method {
-        "initialize" => {
-            let protocol_version =
-                negotiate_protocol_version(params.get("protocolVersion").and_then(Value::as_str));
-            Ok(Some(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {
-                    "protocolVersion": protocol_version,
-                    "capabilities": {
-                        "tools": {
-                            "listChanged": false
-                        }
-                    },
-                    "serverInfo": {
-                        "name": "cli-memory",
-                        "version": env!("CARGO_PKG_VERSION")
-                    }
-                }
-            })))
-        }
-        "notifications/initialized" => Ok(None),
-        "ping" => Ok(Some(json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": {}
-        }))),
-        "tools/list" => Ok(Some(json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": {
-                "tools": tool_definitions()
-            }
-        }))),
-        "tools/call" => {
-            let tool_name = required_string(&params, "name")?;
-            let args = params
-                .get("arguments")
-                .cloned()
-                .unwrap_or_else(|| json!({}));
-            let tool_result = match dispatch_tool_call(tool_name, &args) {
-                Ok(value) => json!({
-                    "content": [{
-                        "type": "text",
-                        "text": serde_json::to_string_pretty(&value)?
-                    }],
-                    "structuredContent": value,
-                    "isError": false
-                }),
-                Err(error) => json!({
-                    "content": [{
-                        "type": "text",
-                        "text": error.to_string()
-                    }],
-                    "isError": true
-                }),
-            };
-            Ok(Some(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": tool_result
-            })))
-        }
-        _ => Ok(Some(jsonrpc_error_response(
-            id,
-            -32601,
-            &format!("method not found: {method}"),
-        ))),
-    }
-}
-
-pub fn handle_stdio_request(line: &str) -> Result<serde_json::Value> {
-    let request: Value = serde_json::from_str(line).context("invalid JSON request")?;
-    let tool = request
-        .get("tool")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("request is missing tool"))?;
-    let args = request.get("args").cloned().unwrap_or_else(|| json!({}));
-    dispatch_tool_call(tool, &args)
-}
-
-fn dispatch_tool_call(tool: &str, args: &Value) -> Result<Value> {
-    let db_path = configured_db_path()?;
-
-    match tool {
-        "health_check" => Ok(health_check(&doctor::inspect()?)),
-        "discover_providers" => discover_providers(),
-        "refresh_imports" => refresh_imports(),
-        "resume_conversation" => resume_conversation(&db_path, required_string(args, "hash_id")?),
-        "search_conversations" => search_conversations(
-            &db_path,
-            required_string(args, "query")?,
-            optional_usize(args, "limit", 10),
-        ),
-        "get_context_bundle" => get_context_bundle(
-            &db_path,
-            required_string(args, "query")?,
-            optional_usize(args, "char_budget", 1200),
-        ),
-        "get_recent_history" => get_recent_history(&db_path, optional_usize(args, "limit", 20)),
-        "search_history" => search_history(
-            &db_path,
-            required_string(args, "query")?,
-            optional_usize(args, "limit", 10),
-        ),
-        "save_message" => save_message(
-            &db_path,
-            parse_provider(required_string(args, "provider")?)?,
-            required_string(args, "conversation_id")?,
-            required_string(args, "message_id")?,
-            parse_role(required_string(args, "role")?)?,
-            required_string(args, "content")?,
-        ),
-        "save_conversation_turn" => save_conversation_turn(
-            &db_path,
-            parse_provider(required_string(args, "provider")?)?,
-            required_string(args, "conversation_id")?,
-            required_string(args, "user_message")?,
-            required_string(args, "assistant_message")?,
-        ),
-        "forget_conversation" => forget_conversation(
-            &db_path,
-            parse_provider(required_string(args, "provider")?)?,
-            required_string(args, "hash_id")?,
-        ),
-        "delete_history" => delete_history(
-            &db_path,
-            parse_provider(required_string(args, "provider")?)?,
-            required_string(args, "hash_id")?,
-        ),
-        "clear_session" => clear_session(
-            &db_path,
-            parse_provider(required_string(args, "provider")?)?,
-            required_string(args, "hash_id")?,
-        ),
-        "memory_stats" => memory_stats(&db_path),
-        _ => Err(anyhow!("unknown tool: {tool}")),
-    }
-}
-
-fn negotiate_protocol_version(requested: Option<&str>) -> String {
-    match requested {
-        Some(version) if SUPPORTED_PROTOCOL_VERSIONS.contains(&version) => version.to_owned(),
-        _ => SUPPORTED_PROTOCOL_VERSIONS[0].to_owned(),
-    }
-}
-
-fn tool_definitions() -> Vec<Value> {
-    vec![
-        tool_definition("health_check", "Return cli-memory server and storage health.", json!({
-            "type": "object",
-            "properties": {}
-        })),
-        tool_definition("discover_providers", "Detect supported local transcript providers on this machine.", json!({
-            "type": "object",
-            "properties": {}
-        })),
-        tool_definition("refresh_imports", "Incrementally import newly changed conversation sources.", json!({
-            "type": "object",
-            "properties": {}
-        })),
-        tool_definition("resume_conversation", "Resume a stored conversation transcript by stable hash id.", json!({
-            "type": "object",
-            "properties": {
-                "hash_id": { "type": "string" }
-            },
-            "required": ["hash_id"]
-        })),
-        tool_definition("search_conversations", "Search imported conversation content.", json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string" },
-                "limit": { "type": "integer" }
-            },
-            "required": ["query"]
-        })),
-        tool_definition("get_context_bundle", "Build a retrieval bundle for a query.", json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string" },
-                "char_budget": { "type": "integer" }
-            },
-            "required": ["query"]
-        })),
-        tool_definition("get_recent_history", "Return recent stored messages.", json!({
-            "type": "object",
-            "properties": {
-                "limit": { "type": "integer" }
-            }
-        })),
-        tool_definition("search_history", "Run storage-backed conversation search.", json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string" },
-                "limit": { "type": "integer" }
-            },
-            "required": ["query"]
-        })),
-        tool_definition("save_message", "Save a single provider-scoped message into memory.", json!({
-            "type": "object",
-            "properties": {
-                "provider": { "type": "string" },
-                "conversation_id": { "type": "string" },
-                "message_id": { "type": "string" },
-                "role": { "type": "string" },
-                "content": { "type": "string" }
-            },
-            "required": ["provider", "conversation_id", "message_id", "role", "content"]
-        })),
-        tool_definition("save_conversation_turn", "Save a user/assistant turn pair.", json!({
-            "type": "object",
-            "properties": {
-                "provider": { "type": "string" },
-                "conversation_id": { "type": "string" },
-                "user_message": { "type": "string" },
-                "assistant_message": { "type": "string" }
-            },
-            "required": ["provider", "conversation_id", "user_message", "assistant_message"]
-        })),
-        tool_definition("forget_conversation", "Soft-ban a conversation from future retrieval.", json!({
-            "type": "object",
-            "properties": {
-                "provider": { "type": "string" },
-                "hash_id": { "type": "string" }
-            },
-            "required": ["provider", "hash_id"]
-        })),
-        tool_definition("delete_history", "Delete a provider-scoped conversation from local storage.", json!({
-            "type": "object",
-            "properties": {
-                "provider": { "type": "string" },
-                "hash_id": { "type": "string" }
-            },
-            "required": ["provider", "hash_id"]
-        })),
-        tool_definition("clear_session", "Clear a provider-scoped session transcript while keeping indexes coherent.", json!({
-            "type": "object",
-            "properties": {
-                "provider": { "type": "string" },
-                "hash_id": { "type": "string" }
-            },
-            "required": ["provider", "hash_id"]
-        })),
-        tool_definition("memory_stats", "Return memory database counts and embedding totals.", json!({
-            "type": "object",
-            "properties": {}
-        })),
-    ]
-}
-
-fn tool_definition(name: &str, description: &str, input_schema: Value) -> Value {
-    json!({
-        "name": name,
-        "description": description,
-        "inputSchema": input_schema,
+    runtime.block_on(async {
+        let server = CliMemoryMcpServer::new()?;
+        let service = server.serve(stdio()).await?;
+        service.waiting().await?;
+        Ok(())
     })
 }
 
-fn jsonrpc_error_response(id: Option<Value>, code: i64, message: &str) -> Value {
-    json!({
-        "jsonrpc": "2.0",
-        "id": id.unwrap_or(Value::Null),
-        "error": {
-            "code": code,
-            "message": message
-        }
-    })
+fn render_json(value: Value) -> std::result::Result<String, ErrorData> {
+    serde_json::to_string_pretty(&value)
+        .map_err(|error| ErrorData::internal_error(error.to_string(), None))
 }
 
-fn read_framed_message<R: BufRead>(reader: &mut R) -> Result<Option<String>> {
-    let mut content_length = None;
-
-    loop {
-        let mut header_line = String::new();
-        let bytes_read = reader
-            .read_line(&mut header_line)
-            .context("failed to read MCP header line")?;
-
-        if bytes_read == 0 {
-            return Ok(None);
-        }
-
-        if header_line == "\r\n" || header_line == "\n" {
-            break;
-        }
-
-        let header_line = header_line.trim_end_matches(['\r', '\n']);
-        let Some((name, value)) = header_line.split_once(':') else {
-            return Err(anyhow!("invalid MCP header line: {header_line}"));
-        };
-
-        if name.eq_ignore_ascii_case("Content-Length") {
-            let parsed = value
-                .trim()
-                .parse::<usize>()
-                .with_context(|| format!("invalid Content-Length value: {}", value.trim()))?;
-            content_length = Some(parsed);
-        }
-    }
-
-    let content_length =
-        content_length.ok_or_else(|| anyhow!("missing Content-Length header"))?;
-    let mut payload = vec![0_u8; content_length];
-    reader
-        .read_exact(&mut payload)
-        .context("failed to read MCP payload body")?;
-    let payload = String::from_utf8(payload).context("MCP payload was not valid UTF-8")?;
-    Ok(Some(payload))
+fn internal_error(error: anyhow::Error) -> ErrorData {
+    ErrorData::internal_error(error.to_string(), None)
 }
 
-fn write_framed_message<W: Write>(writer: &mut W, value: &Value) -> Result<()> {
-    let payload = serde_json::to_vec(value)?;
-    write!(writer, "Content-Length: {}\r\n\r\n", payload.len())?;
-    writer.write_all(&payload)?;
-    Ok(())
+fn invalid_params(error: anyhow::Error) -> ErrorData {
+    ErrorData::invalid_params(error.to_string(), None)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{read_framed_message, write_framed_message};
-    use serde_json::json;
-    use std::io::Cursor;
-
-    #[test]
-    fn framed_reader_extracts_json_payload() {
-        let payload = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
-        let framed = format!("Content-Length: {}\r\n\r\n{}", payload.len(), payload);
-        let mut reader = Cursor::new(framed.into_bytes());
-
-        let message = read_framed_message(&mut reader)
-            .expect("framed message should parse")
-            .expect("framed message should exist");
-
-        assert_eq!(message, payload);
-    }
-
-    #[test]
-    fn framed_writer_emits_content_length_header() {
-        let value = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "result": {}
-        });
-        let mut out = Vec::new();
-        write_framed_message(&mut out, &value).expect("framed response should write");
-        let text = String::from_utf8(out).expect("framed response should be utf8");
-
-        assert!(text.starts_with("Content-Length: "));
-        let (_, body) = text
-            .split_once("\r\n\r\n")
-            .expect("framed response should contain header separator");
-        let parsed: serde_json::Value =
-            serde_json::from_str(body).expect("framed response body should be valid json");
-        assert_eq!(parsed["jsonrpc"], "2.0");
-        assert_eq!(parsed["id"], 1);
-        assert_eq!(parsed["result"], json!({}));
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ResumeConversationArgs {
+    hash_id: String,
 }
 
-fn required_string<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("missing required string argument: {key}"))
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SearchConversationsArgs {
+    query: String,
+    limit: Option<usize>,
 }
 
-fn optional_usize(value: &Value, key: &str, default: usize) -> usize {
-    value
-        .get(key)
-        .and_then(Value::as_u64)
-        .and_then(|raw| usize::try_from(raw).ok())
-        .unwrap_or(default)
+#[derive(Debug, Deserialize, JsonSchema)]
+struct GetContextBundleArgs {
+    query: String,
+    char_budget: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct GetRecentHistoryArgs {
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SearchHistoryArgs {
+    query: String,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SaveMessageArgs {
+    provider: String,
+    conversation_id: String,
+    message_id: String,
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SaveConversationTurnArgs {
+    provider: String,
+    conversation_id: String,
+    user_message: String,
+    assistant_message: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ProviderHashArgs {
+    provider: String,
+    hash_id: String,
 }
 
 fn parse_provider(value: &str) -> Result<ProviderKind> {
@@ -710,7 +522,7 @@ fn parse_role(value: &str) -> Result<MessageRole> {
         "user" => Ok(MessageRole::User),
         "assistant" => Ok(MessageRole::Assistant),
         "tool" => Ok(MessageRole::Tool),
-        _ => Err(anyhow!("unknown message role: {value}")),
+        _ => anyhow::bail!("unknown message role: {value}"),
     }
 }
 
