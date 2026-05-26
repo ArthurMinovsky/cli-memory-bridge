@@ -17,6 +17,6 @@ pub use importers::{
     import_zed,
 };
 pub use installers::{
-    render_copilot_install, render_gemini_install, render_hermes_install,
+    render_codex_install, render_copilot_install, render_gemini_install, render_hermes_install,
     render_opencode_install, render_zed_install,
 };

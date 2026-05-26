@@ -1,4 +1,5 @@
-use cli_memory_engine::Storage;
+use chrono::Utc;
+use cli_memory_engine::{Checkpoint, Storage};
 use cli_memory_core::{ProviderKind, derive_resume_hash};
 
 #[test]
@@ -125,7 +126,7 @@ fn install_all_command_renders_all_provider_bundles() {
 }
 
 #[test]
-fn install_command_renders_codex_assets() {
+fn install_command_renders_codex_bundle() {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
         .args(["install", "codex"])
         .output()
@@ -134,6 +135,10 @@ fn install_command_renders_codex_assets() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("\"provider\": \"codex\""));
+    assert!(stdout.contains("\"config_path\": \"~/.codex/config.toml\""));
+    assert!(stdout.contains("\"preferred_launcher\": \"binary-path\""));
+    assert!(stdout.contains("[mcp_servers.cli-memory]"));
+    assert!(stdout.contains("startup_timeout_sec = 120"));
     assert!(stdout.contains("$resume"));
     assert!(stdout.contains("$conv-search"));
     assert!(stdout.contains("$forget"));
@@ -962,6 +967,65 @@ fn refresh_imports_only_new_conversations_after_init() {
             .expect("message embeddings should count"),
         4
     );
+}
+
+#[test]
+fn refresh_recovers_from_checkpointed_but_unimported_copilot_sources() {
+    let home = tempfile::tempdir().expect("temporary directory should be created");
+    let data_dir = tempfile::tempdir().expect("temporary data directory should be created");
+    let model_dir = tempfile::tempdir().expect("temporary model directory should be created");
+    let copilot_dir = home.path().join(".copilot/session-state/copilot-a");
+    let session = copilot_dir.join("events.jsonl");
+
+    std::fs::create_dir_all(&copilot_dir).expect("Copilot session directory should be created");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/copilot/real-events-session.jsonl"
+        ),
+        &session,
+    )
+    .expect("Copilot fixture should be copied");
+
+    let storage = Storage::open(data_dir.path().join("db.sqlite3")).expect("db should open");
+    storage
+        .save_checkpoint(&Checkpoint {
+            provider: ProviderKind::Copilot,
+            source_path: session.display().to_string(),
+            fingerprint: "file:281:123456".to_owned(),
+            updated_at: Utc::now(),
+        })
+        .expect("checkpoint should save");
+
+    let metadata = std::fs::metadata(&session).expect("session metadata should read");
+    let modified = metadata
+        .modified()
+        .expect("modified time should exist")
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("modified time should be after epoch")
+        .as_secs();
+    storage
+        .save_checkpoint(&Checkpoint {
+            provider: ProviderKind::Copilot,
+            source_path: session.display().to_string(),
+            fingerprint: format!("file:{}:{modified}", metadata.len()),
+            updated_at: Utc::now(),
+        })
+        .expect("matching checkpoint should save");
+
+    let refresh = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+        .arg("refresh")
+        .env("CLI_MEMORY_HOME", home.path())
+        .env("CLI_MEMORY_DATA_DIR", data_dir.path())
+        .env("CLI_MEMORY_MODEL_PATH", model_dir.path())
+        .output()
+        .expect("refresh should run");
+    assert!(refresh.status.success());
+    let stdout = String::from_utf8_lossy(&refresh.stdout);
+    assert!(stdout.contains("imported 1 conversations / 2 messages"));
+
+    assert_eq!(storage.count_conversations().expect("conversations should count"), 1);
+    assert_eq!(storage.count_messages().expect("messages should count"), 2);
 }
 
 #[test]

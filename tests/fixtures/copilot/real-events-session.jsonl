@@ -1,0 +1,4 @@
+{"type":"session.start","data":{"sessionId":"21770214-6dae-47e8-b12c-26baa0be194c"}}
+{"type":"user.message","data":{"content":"how to update copolot?"}}
+{"type":"assistant.message","data":{"content":""}}
+{"type":"assistant.message","data":{"content":"You can update Copilot CLI with the built-in command: run `/update` inside the CLI."}}

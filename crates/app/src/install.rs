@@ -24,7 +24,10 @@ pub fn render_install_bundle(provider: ProviderKind, binary_path: &str) -> Resul
     let value = match provider {
         ProviderKind::Codex => json!({
             "provider": provider.as_slug(),
-            "mode": "assets",
+            "mode": "config+assets",
+            "config_path": "~/.codex/config.toml",
+            "preferred_launcher": "binary-path",
+            "binary_snippet": cli_memory_integrations::render_codex_install(binary_path),
             "assets": {
                 "$resume": cli_memory_integrations::render_codex_resume_skill(),
                 "$conv-search": cli_memory_integrations::render_codex_conv_search_skill(),
@@ -138,7 +141,9 @@ pub fn render_unlink_bundle(provider: ProviderKind) -> Result<Value> {
     let value = match provider {
         ProviderKind::Codex => json!({
             "provider": provider.as_slug(),
-            "mode": "assets",
+            "mode": "config+assets",
+            "config_path": "~/.codex/config.toml",
+            "remove_keys": ["mcp_servers.cli-memory"],
             "remove_assets": ["$resume", "$conv-search", "$forget"],
             "notes": "Remove the cli-memory Codex skill or plugin-owned command assets from your Codex setup.",
         }),

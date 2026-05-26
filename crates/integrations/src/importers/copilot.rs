@@ -43,7 +43,25 @@ pub fn import_copilot(path: impl AsRef<Path>) -> Result<ImportedTranscript> {
                     });
                 }
             }
+            Some("user.message") => {
+                if let Some(text) = extract_text(&line) {
+                    messages.push(TranscriptMessage {
+                        message_id: format!("msg-{}", messages.len() + 1),
+                        role: MessageRole::User,
+                        content: text,
+                    });
+                }
+            }
             Some("assistant") | Some("gemini") | Some("agent.message") => {
+                if let Some(text) = extract_text(&line) {
+                    messages.push(TranscriptMessage {
+                        message_id: format!("msg-{}", messages.len() + 1),
+                        role: MessageRole::Assistant,
+                        content: text,
+                    });
+                }
+            }
+            Some("assistant.message") => {
                 if let Some(text) = extract_text(&line) {
                     messages.push(TranscriptMessage {
                         message_id: format!("msg-{}", messages.len() + 1),
@@ -75,6 +93,16 @@ pub fn import_copilot(path: impl AsRef<Path>) -> Result<ImportedTranscript> {
 fn extract_text(line: &Value) -> Option<String> {
     if let Some(text) = line
         .get("content")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+    {
+        return Some(text.to_owned());
+    }
+
+    if let Some(text) = line
+        .get("data")
+        .and_then(|value| value.get("content"))
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|text| !text.is_empty())

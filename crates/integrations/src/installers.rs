@@ -1,3 +1,9 @@
+pub fn render_codex_install(binary_path: &str) -> String {
+    format!(
+        "[mcp_servers.cli-memory]\ncommand = \"{binary_path}\"\nargs = [\"serve\"]\nstartup_timeout_sec = 120\n"
+    )
+}
+
 pub fn render_zed_install(binary_path: &str) -> String {
     format!(
         "{{\"context_servers\":{{\"cli-memory\":{{\"command\":\"{binary_path}\",\"args\":[\"serve\"]}}}}}}"

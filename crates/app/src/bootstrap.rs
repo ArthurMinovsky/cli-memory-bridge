@@ -58,6 +58,16 @@ fn run_sync() -> Result<BootstrapSummary> {
             )
         })
         .collect::<BTreeMap<_, _>>();
+    let imported_sources = storage
+        .conversation_states()?
+        .into_iter()
+        .map(|row| {
+            (
+                (row.provider.as_slug().to_owned(), row.source_path),
+                row.source_fingerprint,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
 
     let mut checkpoint_count = 0usize;
     let mut providers = Vec::new();
@@ -72,9 +82,13 @@ fn run_sync() -> Result<BootstrapSummary> {
             let fingerprint = fingerprint_for_path(path)?;
             let source_key = (provider.provider.as_slug().to_owned(), source_path.clone());
 
+            let already_imported = imported_sources
+                .get(&source_key)
+                .is_some_and(|known| known == &fingerprint);
             if existing_checkpoints
                 .get(&source_key)
                 .is_some_and(|known| known == &fingerprint)
+                && already_imported
             {
                 checkpoint_count += 1;
                 continue;
@@ -114,14 +128,15 @@ fn run_sync() -> Result<BootstrapSummary> {
                         conversation,
                     });
                 }
+
+                storage.save_checkpoint(&Checkpoint {
+                    provider: provider.provider,
+                    source_path,
+                    fingerprint,
+                    updated_at: Utc::now(),
+                })?;
+                checkpoint_count += 1;
             }
-            storage.save_checkpoint(&Checkpoint {
-                provider: provider.provider,
-                source_path,
-                fingerprint,
-                updated_at: Utc::now(),
-            })?;
-            checkpoint_count += 1;
         }
     }
 
