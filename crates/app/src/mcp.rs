@@ -429,13 +429,14 @@ impl CliMemoryMcpServer {
 
 #[tool_handler(
     name = "cli-memory",
-    version = "0.1.9",
+    version = "0.1.10",
     instructions = "Local cross-CLI memory retrieval server."
 )]
 impl ServerHandler for CliMemoryMcpServer {}
 
 pub fn serve_stdio() -> Result<()> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
         .enable_all()
         .build()
         .context("failed to build tokio runtime for MCP server")?;
