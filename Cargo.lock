@@ -299,7 +299,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cli-memory-app"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "anyhow",
  "chrono",
@@ -316,7 +316,7 @@ dependencies = [
 
 [[package]]
 name = "cli-memory-core"
-version = "0.1.7"
+version = "0.1.15"
 dependencies = [
  "serde",
  "serde_json",
@@ -324,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "cli-memory-engine"
-version = "0.1.7"
+version = "0.1.15"
 dependencies = [
  "anyhow",
  "blas-src",
@@ -340,7 +340,7 @@ dependencies = [
 
 [[package]]
 name = "cli-memory-integrations"
-version = "0.1.7"
+version = "0.1.15"
 dependencies = [
  "anyhow",
  "cli-memory-core",
