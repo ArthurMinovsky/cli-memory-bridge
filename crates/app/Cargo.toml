@@ -4,10 +4,6 @@ version = "0.1.16"
 edition = "2024"
 
 [[bin]]
-name = "cli-memory"
-path = "src/main.rs"
-
-[[bin]]
 name = "cmb"
 path = "src/main.rs"
 

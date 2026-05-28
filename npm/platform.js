@@ -1,7 +1,7 @@
 "use strict";
 
 function binaryName(platform) {
-  return platform === "win32" ? "cli-memory.exe" : "cli-memory";
+  return platform === "win32" ? "cmb.exe" : "cmb";
 }
 
 function platformKey(platform, arch) {

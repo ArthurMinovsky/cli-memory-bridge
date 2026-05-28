@@ -1,6 +1,6 @@
 # cli-memory-bridge
 
-`cli-memory-bridge` is a local-first memory bridge for terminal coding agents and MCP-enabled CLIs. It imports conversation history from supported providers on your machine, stores canonical transcripts and embeddings locally, and serves that memory back through `cli-memory` commands and an MCP-compatible stdio server.
+`cli-memory-bridge` is a local-first memory bridge for terminal coding agents and MCP-enabled CLIs. It imports conversation history from supported providers on your machine, stores canonical transcripts and embeddings locally, and serves that memory back through `cmb` commands and an MCP-compatible stdio server.
 
 The current Rust build supports transcript import and retrieval for:
 - Codex
@@ -20,16 +20,16 @@ npx -y @aminovsky/cli-memory serve
 
 ## Features
 
-- `cli-memory init` to detect providers and import local conversations
-- `cli-memory refresh` to incrementally import only new or changed sources
-- `cli-memory resume <hash-id>` to restore a conversation transcript by stable hash
-- `cli-memory conv-search <query>` to search imported conversation content
-- `cli-memory forget <provider> <hash-id>` to soft-ban a conversation from future retrieval
-- `cli-memory serve` to expose the stdio MCP tool surface
-- `cli-memory doctor` and `cli-memory stats` for diagnostics
-- `cli-memory install <provider>` to render provider install/config bundles
-- `cli-memory unlink <provider>` and `cli-memory unlink --all` to render provider cleanup bundles
-- `cli-memory uninstall` to render full package removal guidance
+- `cmb init` to detect providers and import local conversations
+- `cmb refresh` to incrementally import only new or changed sources
+- `cmb resume <hash-id>` to restore a conversation transcript by stable hash
+- `cmb conv-search <query>` to search imported conversation content
+- `cmb forget <provider> <hash-id>` to soft-ban a conversation from future retrieval
+- `cmb serve` to expose the stdio MCP tool surface
+- `cmb doctor` and `cmb stats` for diagnostics
+- `cmb install <provider>` to render provider install/config bundles
+- `cmb unlink <provider>` and `cmb unlink --all` to render provider cleanup bundles
+- `cmb uninstall` to render full package removal guidance
 
 ## Install
 
@@ -41,20 +41,20 @@ For MCP usage and command execution through npm:
 npx -y @aminovsky/cli-memory --help
 ```
 
-On first install, the npm package downloads a platform-specific `cli-memory` binary from the matching GitHub release for this package version and stores it under `npm/vendor/<platform>/`.
+On first install, the npm package downloads a platform-specific `cmb` binary from the matching GitHub release for this package version and stores it under `npm/vendor/<platform>/`.
 
 If you install the package globally:
 
 ```bash
 npm install -g @aminovsky/cli-memory
-cli-memory --help
+cmb --help
 ```
 
 ### Local Rust build
 
 ```bash
 cargo build --release
-./target/release/cli-memory --help
+./target/release/cmb --help
 ```
 
 ## Quick start
@@ -62,10 +62,10 @@ cargo build --release
 Import local transcripts and start using retrieval:
 
 ```bash
-cli-memory init
-cli-memory doctor
-cli-memory stats
-cli-memory conv-search "run the app"
+cmb init
+cmb doctor
+cmb stats
+cmb conv-search "run the app"
 ```
 
 Run the MCP server through `npx`:
@@ -90,9 +90,9 @@ The npm package is designed for MCP configs that accept `command` plus `args`. T
 Render a provider-specific install bundle:
 
 ```bash
-cli-memory install gemini
-cli-memory install zed
-cli-memory install codex
+cmb install gemini
+cmb install zed
+cmb install codex
 ```
 
 Current install behavior is render-only. It prints the config/assets you should apply for that provider.
@@ -102,15 +102,15 @@ Current install behavior is render-only. It prints the config/assets you should 
 Render cleanup instructions for one provider:
 
 ```bash
-cli-memory unlink gemini
-cli-memory unlink zed
-cli-memory unlink codex
+cmb unlink gemini
+cmb unlink zed
+cmb unlink codex
 ```
 
 Render cleanup bundles for every supported provider:
 
 ```bash
-cli-memory unlink --all
+cmb unlink --all
 ```
 
 `unlink` removes provider wiring only. It does not remove the `cli-memory` package or the local memory database.
@@ -120,13 +120,13 @@ cli-memory unlink --all
 Render full uninstall guidance:
 
 ```bash
-cli-memory uninstall
+cmb uninstall
 ```
 
 The intended order is:
 
 ```bash
-cli-memory unlink --all
+cmb unlink --all
 npm uninstall -g @aminovsky/cli-memory
 ```
 
@@ -155,7 +155,7 @@ For npm release prep, this repo now includes:
 Before publishing to npm:
 - build release binaries for each supported platform
 - upload them to the GitHub release tagged `v<package.json version>`
-- use asset names in the form `cli-memory-<version>-<platform-arch>` and `cli-memory.exe-<version>-<platform-arch>` for Windows
+- use asset names in the form `cmb-<version>-<platform-arch>` and `cmb.exe-<version>-<platform-arch>` for Windows
 - verify with `npm pack --dry-run` and a clean `npx -y @aminovsky/cli-memory --help` install test
 
 ## Status

@@ -496,7 +496,50 @@ impl CliMemoryMcpServer {
 )]
 impl ServerHandler for CliMemoryMcpServer {}
 
+/// Kill any other running cli-memory serve process to avoid CPU-draining duplicates.
+/// Uses an exclusive PID file with retry-and-kill to guarantee a single running instance.
+fn kill_orphaned_instances() {
+    let current_pid = std::process::id();
+    if let Ok(pid_dir) = crate::bootstrap::configured_data_dir() {
+        let pid_file = pid_dir.join("server.pid");
+        for _attempt in 0..5 {
+            // Attempt exclusive creation (O_CREAT|O_EXCL is atomic on Unix)
+            match std::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&pid_file)
+            {
+                Ok(mut f) => {
+                    // Atomically write our PID — file handle ensures no gap
+                    use std::io::Write;
+                    let _ = writeln!(f, "{current_pid}");
+                    return;
+                }
+                Err(_) => {
+                    // File exists — read old PID, kill it, retry
+                    if let Ok(old_pid_str) = std::fs::read_to_string(&pid_file) {
+                        if let Ok(old_pid) = old_pid_str.trim().parse::<u32>() {
+                            if old_pid != current_pid {
+                                let _ = std::process::Command::new("kill")
+                                    .arg("-9")
+                                    .arg(old_pid.to_string())
+                                    .output();
+                            }
+                        }
+                    }
+                    let _ = std::fs::remove_file(&pid_file);
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+        }
+        // Last resort
+        let _ = std::fs::write(&pid_file, current_pid.to_string());
+    }
+}
+
 pub fn serve_stdio() -> Result<()> {
+    kill_orphaned_instances();
+
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
         .enable_all()

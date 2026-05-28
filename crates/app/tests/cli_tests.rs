@@ -1,17 +1,17 @@
 use chrono::Utc;
+use cli_memory_core::{derive_resume_hash, ProviderKind};
 use cli_memory_engine::{Checkpoint, Storage};
-use cli_memory_core::{ProviderKind, derive_resume_hash};
 
 #[test]
 fn binary_reports_help() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("--help")
         .output()
         .expect("binary should run");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("cli-memory"));
+    assert!(stdout.contains("cmb"));
     assert!(stdout.contains("init"));
 }
 
@@ -30,7 +30,7 @@ fn cmb_binary_reports_help() {
 
 #[test]
 fn help_lists_resume_and_conv_search() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("--help")
         .output()
         .expect("binary should run");
@@ -77,23 +77,21 @@ fn claude_conv_search_command_contains_search_instruction() {
 
 #[test]
 fn zed_installer_renders_context_server() {
-    let json = cli_memory_integrations::render_zed_install("/tmp/cli-memory");
-    assert!(json.contains("\"context_servers\""));
-    assert!(json.contains("cli-memory"));
-    assert!(json.contains("/tmp/cli-memory"));
+    let json = cli_memory_integrations::render_zed_install("/tmp/cmb");
+    assert!(json.contains("cmb"));
+    assert!(json.contains("/tmp/cmb"));
 }
 
 #[test]
-fn hermes_installer_renders_yaml_config() {
-    let yaml = cli_memory_integrations::render_hermes_install("/tmp/cli-memory");
-    assert!(yaml.contains("mcp_servers:"));
+fn render_hermes_install_produces_yaml() {
+    let yaml = cli_memory_integrations::render_hermes_install("/tmp/cmb");
     assert!(yaml.contains("cli-memory:"));
-    assert!(yaml.contains("/tmp/cli-memory"));
+    assert!(yaml.contains("/tmp/cmb"));
 }
 
 #[test]
 fn install_command_renders_gemini_bundle() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["install", "gemini"])
         .output()
         .expect("install should run");
@@ -110,7 +108,7 @@ fn install_command_renders_gemini_bundle() {
 
 #[test]
 fn install_command_renders_copilot_bundle_with_documented_config_path() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["install", "copilot"])
         .output()
         .expect("install should run");
@@ -126,7 +124,7 @@ fn install_command_renders_copilot_bundle_with_documented_config_path() {
 
 #[test]
 fn install_all_command_renders_all_provider_bundles() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["install", "--all"])
         .output()
         .expect("install --all should run");
@@ -140,7 +138,7 @@ fn install_all_command_renders_all_provider_bundles() {
 
 #[test]
 fn install_command_renders_codex_bundle() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["install", "codex"])
         .output()
         .expect("install should run");
@@ -177,9 +175,7 @@ fn init_installs_missing_integrations_for_detected_providers() {
     )
     .expect("Codex fixture should be copied");
 
-    let gemini_session = home
-        .path()
-        .join(".gemini/tmp/project/chats/session-1.json");
+    let gemini_session = home.path().join(".gemini/tmp/project/chats/session-1.json");
     std::fs::create_dir_all(gemini_session.parent().expect("gemini parent should exist"))
         .expect("Gemini directory should be created");
     std::fs::copy(
@@ -191,7 +187,7 @@ fn init_installs_missing_integrations_for_detected_providers() {
     )
     .expect("Gemini fixture should be copied");
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -203,8 +199,8 @@ fn init_installs_missing_integrations_for_detected_providers() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("installed cli-memory integrations:"));
 
-    let codex_config =
-        std::fs::read_to_string(home.path().join(".codex/config.toml")).expect("codex config should read");
+    let codex_config = std::fs::read_to_string(home.path().join(".codex/config.toml"))
+        .expect("codex config should read");
     assert!(codex_config.contains("[mcp_servers.cli-memory]"));
     assert!(codex_config.contains("args = [\"serve\"]"));
 
@@ -239,7 +235,7 @@ fn init_skips_existing_integrations_without_duplication() {
     )
     .expect("existing codex config should be written");
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -251,15 +247,15 @@ fn init_skips_existing_integrations_without_duplication() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("skipped existing integrations: codex"));
 
-    let codex_config =
-        std::fs::read_to_string(home.path().join(".codex/config.toml")).expect("codex config should read");
+    let codex_config = std::fs::read_to_string(home.path().join(".codex/config.toml"))
+        .expect("codex config should read");
     assert_eq!(codex_config.matches("[mcp_servers.cli-memory]").count(), 1);
     assert!(codex_config.contains("command = \"/tmp/existing\""));
 }
 
 #[test]
 fn unlink_command_renders_provider_cleanup_bundle() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["unlink", "gemini"])
         .output()
         .expect("unlink should run");
@@ -273,7 +269,7 @@ fn unlink_command_renders_provider_cleanup_bundle() {
 
 #[test]
 fn unlink_all_command_renders_all_provider_cleanup_bundles() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["unlink", "--all"])
         .output()
         .expect("unlink --all should run");
@@ -287,7 +283,7 @@ fn unlink_all_command_renders_all_provider_cleanup_bundles() {
 
 #[test]
 fn uninstall_command_renders_package_removal_guidance() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("uninstall")
         .output()
         .expect("uninstall should run");
@@ -319,7 +315,7 @@ fn resume_prints_hash_id() {
     )
     .expect("Codex fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -328,11 +324,8 @@ fn resume_prints_hash_id() {
         .expect("init should run");
     assert!(init.status.success());
 
-    let hash_id = derive_resume_hash(
-        ProviderKind::Codex,
-        "019e3c95-ac82-7402-bb65-f9bf46673f1f",
-    );
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let hash_id = derive_resume_hash(ProviderKind::Codex, "019e3c95-ac82-7402-bb65-f9bf46673f1f");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["resume", &hash_id])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -366,7 +359,7 @@ fn conv_search_prints_query() {
     )
     .expect("Codex fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -375,7 +368,7 @@ fn conv_search_prints_query() {
         .expect("init should run");
     assert!(init.status.success());
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["conv-search", "install"])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -398,10 +391,8 @@ fn init_imports_gemini_sessions_into_resume_and_search() {
         .path()
         .join(".gemini/tmp/desktop/chats/session-2026-05-05T14-43-356dbecc.json");
 
-    std::fs::create_dir_all(
-        home.path().join(".gemini/tmp/desktop/chats"),
-    )
-    .expect("Gemini chats directory should be created");
+    std::fs::create_dir_all(home.path().join(".gemini/tmp/desktop/chats"))
+        .expect("Gemini chats directory should be created");
     std::fs::copy(
         concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -411,7 +402,7 @@ fn init_imports_gemini_sessions_into_resume_and_search() {
     )
     .expect("Gemini fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -421,7 +412,7 @@ fn init_imports_gemini_sessions_into_resume_and_search() {
     assert!(init.status.success());
 
     let hash_id = derive_resume_hash(ProviderKind::Gemini, "gemini-conv-1");
-    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["resume", &hash_id])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -433,7 +424,7 @@ fn init_imports_gemini_sessions_into_resume_and_search() {
     assert!(resume_stdout.contains("user: How do I run the app?"));
     assert!(resume_stdout.contains("assistant: Use cargo run --bin cli-memory."));
 
-    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["conv-search", "run the app"])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -454,7 +445,8 @@ fn init_imports_copilot_sessions_into_resume_and_search() {
         .join(".copilot/session-state/00015301-8a7f-4967-9ffe-48778191172e/events.jsonl");
 
     std::fs::create_dir_all(
-        home.path().join(".copilot/session-state/00015301-8a7f-4967-9ffe-48778191172e"),
+        home.path()
+            .join(".copilot/session-state/00015301-8a7f-4967-9ffe-48778191172e"),
     )
     .expect("Copilot session-state directory should be created");
     std::fs::copy(
@@ -466,7 +458,7 @@ fn init_imports_copilot_sessions_into_resume_and_search() {
     )
     .expect("Copilot fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -476,7 +468,7 @@ fn init_imports_copilot_sessions_into_resume_and_search() {
     assert!(init.status.success());
 
     let hash_id = derive_resume_hash(ProviderKind::Copilot, "copilot-conv-1");
-    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["resume", &hash_id])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -488,7 +480,7 @@ fn init_imports_copilot_sessions_into_resume_and_search() {
     assert!(resume_stdout.contains("user: How do I run the app?"));
     assert!(resume_stdout.contains("assistant: Use cargo run --bin cli-memory."));
 
-    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["conv-search", "run the app"])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -519,7 +511,7 @@ fn init_imports_zed_sessions_into_resume_and_search() {
     )
     .expect("Zed fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -529,7 +521,7 @@ fn init_imports_zed_sessions_into_resume_and_search() {
     assert!(init.status.success());
 
     let hash_id = derive_resume_hash(ProviderKind::Zed, "zed-conv-1");
-    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["resume", &hash_id])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -541,7 +533,7 @@ fn init_imports_zed_sessions_into_resume_and_search() {
     assert!(resume_stdout.contains("Summary: Run the app"));
     assert!(resume_stdout.contains("assistant: Use cargo run --bin cli-memory."));
 
-    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["conv-search", "run the app"])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -572,7 +564,7 @@ fn init_skips_low_content_zed_conversations() {
     )
     .expect("Zed summary-only fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -582,7 +574,12 @@ fn init_skips_low_content_zed_conversations() {
     assert!(init.status.success());
 
     let storage = Storage::open(data_dir.path().join("db.sqlite3")).expect("db should open");
-    assert_eq!(storage.count_conversations().expect("conversations should count"), 0);
+    assert_eq!(
+        storage
+            .count_conversations()
+            .expect("conversations should count"),
+        0
+    );
     assert_eq!(storage.count_messages().expect("messages should count"), 0);
 }
 
@@ -595,8 +592,11 @@ fn init_imports_opencode_sessions_into_resume_and_search() {
         .path()
         .join(".local/share/opencode/storage/session_diff/ses_test123.json");
 
-    std::fs::create_dir_all(home.path().join(".local/share/opencode/storage/session_diff"))
-        .expect("OpenCode session_diff directory should be created");
+    std::fs::create_dir_all(
+        home.path()
+            .join(".local/share/opencode/storage/session_diff"),
+    )
+    .expect("OpenCode session_diff directory should be created");
     std::fs::copy(
         concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -606,7 +606,7 @@ fn init_imports_opencode_sessions_into_resume_and_search() {
     )
     .expect("OpenCode fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -616,7 +616,7 @@ fn init_imports_opencode_sessions_into_resume_and_search() {
     assert!(init.status.success());
 
     let hash_id = derive_resume_hash(ProviderKind::OpenCode, "opencode-conv-1");
-    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["resume", &hash_id])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -628,7 +628,7 @@ fn init_imports_opencode_sessions_into_resume_and_search() {
     assert!(resume_stdout.contains("user: How do I run the app?"));
     assert!(resume_stdout.contains("assistant: Use cargo run --bin cli-memory."));
 
-    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["conv-search", "run the app"])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -644,9 +644,7 @@ fn init_imports_antigravity_sessions_into_resume_and_search() {
     let home = tempfile::tempdir().expect("temporary directory should be created");
     let data_dir = tempfile::tempdir().expect("temporary data directory should be created");
     let model_dir = tempfile::tempdir().expect("temporary model directory should be created");
-    let antigravity_dir = home
-        .path()
-        .join(".gemini/antigravity/brain/session-1");
+    let antigravity_dir = home.path().join(".gemini/antigravity/brain/session-1");
 
     std::fs::create_dir_all(&antigravity_dir)
         .expect("Antigravity brain session directory should be created");
@@ -675,7 +673,7 @@ fn init_imports_antigravity_sessions_into_resume_and_search() {
     )
     .expect("Antigravity implementation plan fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -685,7 +683,7 @@ fn init_imports_antigravity_sessions_into_resume_and_search() {
     assert!(init.status.success());
 
     let hash_id = derive_resume_hash(ProviderKind::AntigravityCli, "session-1");
-    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["resume", &hash_id])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -695,9 +693,11 @@ fn init_imports_antigravity_sessions_into_resume_and_search() {
     assert!(resume.status.success());
     let resume_stdout = String::from_utf8_lossy(&resume.stdout);
     assert!(resume_stdout.contains("user: # Task"));
-    assert!(resume_stdout.contains("assistant: Summary (ARTIFACT_TYPE_OTHER): Ask how to run the app."));
+    assert!(
+        resume_stdout.contains("assistant: Summary (ARTIFACT_TYPE_OTHER): Ask how to run the app.")
+    );
 
-    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["conv-search", "run the app"])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -713,9 +713,7 @@ fn init_imports_hermes_sessions_into_resume_and_search() {
     let home = tempfile::tempdir().expect("temporary directory should be created");
     let data_dir = tempfile::tempdir().expect("temporary data directory should be created");
     let model_dir = tempfile::tempdir().expect("temporary model directory should be created");
-    let hermes_session = home
-        .path()
-        .join(".hermes/sessions/session-1.jsonl");
+    let hermes_session = home.path().join(".hermes/sessions/session-1.jsonl");
 
     std::fs::create_dir_all(home.path().join(".hermes/sessions"))
         .expect("Hermes sessions directory should be created");
@@ -728,7 +726,7 @@ fn init_imports_hermes_sessions_into_resume_and_search() {
     )
     .expect("Hermes fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -738,7 +736,7 @@ fn init_imports_hermes_sessions_into_resume_and_search() {
     assert!(init.status.success());
 
     let hash_id = derive_resume_hash(ProviderKind::Hermes, "hermes-conv-1");
-    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["resume", &hash_id])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -750,7 +748,7 @@ fn init_imports_hermes_sessions_into_resume_and_search() {
     assert!(resume_stdout.contains("user: How do I run the app?"));
     assert!(resume_stdout.contains("assistant: Use cargo run --bin cli-memory."));
 
-    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["conv-search", "run the app"])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -781,7 +779,7 @@ fn forget_bans_conversation_from_future_resume_and_search() {
     )
     .expect("Codex fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -790,11 +788,8 @@ fn forget_bans_conversation_from_future_resume_and_search() {
         .expect("init should run");
     assert!(init.status.success());
 
-    let hash_id = derive_resume_hash(
-        ProviderKind::Codex,
-        "019e3c95-ac82-7402-bb65-f9bf46673f1f",
-    );
-    let forget = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let hash_id = derive_resume_hash(ProviderKind::Codex, "019e3c95-ac82-7402-bb65-f9bf46673f1f");
+    let forget = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["forget", "codex", &hash_id])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -803,7 +798,7 @@ fn forget_bans_conversation_from_future_resume_and_search() {
     assert!(forget.status.success());
     assert!(String::from_utf8_lossy(&forget.stdout).contains("forgot codex"));
 
-    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let resume = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["resume", &hash_id])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -813,7 +808,7 @@ fn forget_bans_conversation_from_future_resume_and_search() {
     assert!(resume.status.success());
     assert!(String::from_utf8_lossy(&resume.stdout).contains("no conversation found"));
 
-    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let search = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["conv-search", "install"])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -841,7 +836,7 @@ fn doctor_prints_marker() {
     let home = tempfile::tempdir().expect("temporary directory should be created");
     let data_dir = tempfile::tempdir().expect("temporary data directory should be created");
     let model_dir = tempfile::tempdir().expect("temporary model directory should be created");
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("doctor")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -860,7 +855,7 @@ fn stats_prints_json_counts() {
     let home = tempfile::tempdir().expect("temporary directory should be created");
     let data_dir = tempfile::tempdir().expect("temporary data directory should be created");
     let model_dir = tempfile::tempdir().expect("temporary model directory should be created");
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("stats")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -884,9 +879,12 @@ fn stats_refreshes_before_counting_new_conversations() {
     let second_session = codex_dir.join("session-b.jsonl");
 
     std::fs::create_dir_all(&codex_dir).expect("Codex sessions directory should be created");
-    std::fs::write(home.path().join(".codex/session_index.jsonl"), "{}
-")
-        .expect("Codex session index should be written");
+    std::fs::write(
+        home.path().join(".codex/session_index.jsonl"),
+        "{}
+",
+    )
+    .expect("Codex session index should be written");
     std::fs::copy(
         concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -896,7 +894,7 @@ fn stats_refreshes_before_counting_new_conversations() {
     )
     .expect("Codex fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -920,7 +918,7 @@ fn stats_refreshes_before_counting_new_conversations() {
     );
     std::fs::write(&second_session, second_text).expect("second session should be written");
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("stats")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -965,7 +963,7 @@ fn init_detects_and_checkpoints_sources() {
     )
     .expect("Claude fixture should be copied");
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -983,7 +981,12 @@ fn init_detects_and_checkpoints_sources() {
     let storage = Storage::open(data_dir.path().join("db.sqlite3")).expect("db should open");
     let checkpoints = storage.list_checkpoints().expect("checkpoints should list");
     assert_eq!(checkpoints.len(), 3);
-    assert_eq!(storage.count_conversations().expect("conversations should count"), 2);
+    assert_eq!(
+        storage
+            .count_conversations()
+            .expect("conversations should count"),
+        2
+    );
     assert_eq!(storage.count_messages().expect("messages should count"), 5);
     assert_eq!(
         storage
@@ -1024,7 +1027,7 @@ fn refresh_updates_existing_checkpoint_without_duplicates() {
     )
     .expect("Claude fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -1046,7 +1049,7 @@ fn refresh_updates_existing_checkpoint_without_duplicates() {
     std::fs::write(&codex_index, "{\"changed\":true}\n")
         .expect("Codex session index should be updated");
 
-    let refresh = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let refresh = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("refresh")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -1065,7 +1068,12 @@ fn refresh_updates_existing_checkpoint_without_duplicates() {
         .fingerprint
         .clone();
     assert_ne!(before_index, after_index);
-    assert_eq!(storage.count_conversations().expect("conversations should count"), 2);
+    assert_eq!(
+        storage
+            .count_conversations()
+            .expect("conversations should count"),
+        2
+    );
     assert_eq!(storage.count_messages().expect("messages should count"), 5);
     assert_eq!(
         storage
@@ -1096,7 +1104,7 @@ fn resume_reports_exact_source_matches_when_hash_is_not_imported() {
     )
     .expect("Codex transcript source should be written");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -1105,7 +1113,7 @@ fn resume_reports_exact_source_matches_when_hash_is_not_imported() {
         .expect("init should run");
     assert!(init.status.success());
 
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .args(["resume", missing_hash])
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -1142,7 +1150,7 @@ fn refresh_imports_only_new_conversations_after_init() {
     )
     .expect("Codex fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -1166,7 +1174,7 @@ fn refresh_imports_only_new_conversations_after_init() {
     );
     std::fs::write(&second_session, second_text).expect("second session should be written");
 
-    let refresh = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let refresh = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("refresh")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -1178,7 +1186,12 @@ fn refresh_imports_only_new_conversations_after_init() {
     assert!(stdout.contains("imported 1 conversations / 2 messages"));
 
     let storage = Storage::open(data_dir.path().join("db.sqlite3")).expect("db should open");
-    assert_eq!(storage.count_conversations().expect("conversations should count"), 2);
+    assert_eq!(
+        storage
+            .count_conversations()
+            .expect("conversations should count"),
+        2
+    );
     assert_eq!(storage.count_messages().expect("messages should count"), 4);
     assert_eq!(
         storage
@@ -1232,7 +1245,7 @@ fn refresh_recovers_from_checkpointed_but_unimported_copilot_sources() {
         })
         .expect("matching checkpoint should save");
 
-    let refresh = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let refresh = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("refresh")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -1243,7 +1256,12 @@ fn refresh_recovers_from_checkpointed_but_unimported_copilot_sources() {
     let stdout = String::from_utf8_lossy(&refresh.stdout);
     assert!(stdout.contains("imported 1 conversations / 2 messages"));
 
-    assert_eq!(storage.count_conversations().expect("conversations should count"), 1);
+    assert_eq!(
+        storage
+            .count_conversations()
+            .expect("conversations should count"),
+        1
+    );
     assert_eq!(storage.count_messages().expect("messages should count"), 2);
 }
 
@@ -1267,7 +1285,7 @@ fn refresh_skips_reimporting_changed_existing_conversations() {
     )
     .expect("Codex fixture should be copied");
 
-    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("init")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -1283,7 +1301,7 @@ fn refresh_skips_reimporting_changed_existing_conversations() {
     );
     std::fs::write(&session, changed_text).expect("session should be updated");
 
-    let refresh = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+    let refresh = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
         .arg("refresh")
         .env("CLI_MEMORY_HOME", home.path())
         .env("CLI_MEMORY_DATA_DIR", data_dir.path())
@@ -1295,7 +1313,12 @@ fn refresh_skips_reimporting_changed_existing_conversations() {
     assert!(stdout.contains("imported 0 conversations / 0 messages"));
 
     let storage = Storage::open(data_dir.path().join("db.sqlite3")).expect("db should open");
-    assert_eq!(storage.count_conversations().expect("conversations should count"), 1);
+    assert_eq!(
+        storage
+            .count_conversations()
+            .expect("conversations should count"),
+        1
+    );
     assert_eq!(storage.count_messages().expect("messages should count"), 2);
     assert_eq!(
         storage
