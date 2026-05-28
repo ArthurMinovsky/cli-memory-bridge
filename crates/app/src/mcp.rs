@@ -491,7 +491,7 @@ impl CliMemoryMcpServer {
 
 #[tool_handler(
     name = "cli-memory",
-    version = "0.1.16",
+    version = "0.2.0",
     instructions = "Local cross-CLI memory retrieval server."
 )]
 impl ServerHandler for CliMemoryMcpServer {}
