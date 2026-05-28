@@ -38,7 +38,6 @@ pub fn get_context_bundle(
     query: &str,
     char_budget: usize,
 ) -> Result<Value> {
-    let _ = run_refresh();
     let storage = Storage::open(db_path)?;
     let service = RetrievalService::from_storage(&storage)?;
     context_bundle_with_service(&service, query, char_budget)
@@ -101,7 +100,6 @@ pub fn refresh_imports() -> Result<Value> {
 }
 
 pub fn resume_conversation(db_path: impl AsRef<Path>, hash_id: &str) -> Result<Value> {
-    let _ = run_refresh();
     let storage = Storage::open(db_path)?;
     let bundle = storage.resume_bundle(hash_id)?;
     Ok(json!({
@@ -116,7 +114,6 @@ pub fn search_conversations(
     query: &str,
     limit: usize,
 ) -> Result<Value> {
-    let _ = run_refresh();
     let storage = Storage::open(db_path)?;
     let service = RetrievalService::from_storage(&storage)?;
     let results = service.search_lines(query, limit)?;
@@ -279,17 +276,27 @@ impl CliMemoryMcpServer {
             retrieval: std::sync::Arc::new(std::sync::RwLock::new(None)),
         })
     }
+
+    fn refresh_runtime_state(&self) -> std::result::Result<(), ErrorData> {
+        run_refresh().map_err(internal_error)?;
+        if let Ok(mut locked) = self.retrieval.write() {
+            *locked = None;
+        }
+        Ok(())
+    }
 }
 
 #[tool_router]
 impl CliMemoryMcpServer {
     #[tool(name = "doctor", description = "Return cli-memory server and storage health.")]
     fn health_check(&self) -> std::result::Result<String, ErrorData> {
+        self.refresh_runtime_state()?;
         render_json(health_check(&doctor::inspect().map_err(internal_error)?))
     }
 
     #[tool(name = "discover-providers", description = "Detect supported local transcript providers on this machine.")]
     fn discover_providers(&self) -> std::result::Result<String, ErrorData> {
+        self.refresh_runtime_state()?;
         render_json(discover_providers().map_err(internal_error)?)
     }
 
@@ -303,6 +310,7 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(ResumeConversationArgs { hash_id }): Parameters<ResumeConversationArgs>,
     ) -> std::result::Result<String, ErrorData> {
+        self.refresh_runtime_state()?;
         render_json(resume_conversation(&self.db_path, &hash_id).map_err(internal_error)?)
     }
 
@@ -311,7 +319,7 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(SearchConversationsArgs { query, limit }): Parameters<SearchConversationsArgs>,
     ) -> std::result::Result<String, ErrorData> {
-        let _ = run_refresh();
+        self.refresh_runtime_state()?;
         let target_limit = limit.unwrap_or(10);
         let fetch_limit = std::cmp::max(target_limit * 3, 12);
         
@@ -357,7 +365,7 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(GetContextBundleArgs { query, char_budget }): Parameters<GetContextBundleArgs>,
     ) -> std::result::Result<String, ErrorData> {
-        let _ = run_refresh();
+        self.refresh_runtime_state()?;
         let mut locked = self.retrieval.write().unwrap();
         if locked.is_none() {
             let storage = Storage::open(&self.db_path).map_err(internal_error)?;
@@ -376,6 +384,7 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(GetRecentHistoryArgs { limit }): Parameters<GetRecentHistoryArgs>,
     ) -> std::result::Result<String, ErrorData> {
+        self.refresh_runtime_state()?;
         render_json(get_recent_history(&self.db_path, limit.unwrap_or(20)).map_err(internal_error)?)
     }
 
@@ -384,6 +393,7 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(SearchHistoryArgs { query, limit }): Parameters<SearchHistoryArgs>,
     ) -> std::result::Result<String, ErrorData> {
+        self.refresh_runtime_state()?;
         render_json(search_history(&self.db_path, &query, limit.unwrap_or(10)).map_err(internal_error)?)
     }
 
@@ -392,6 +402,7 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(args): Parameters<SaveMessageArgs>,
     ) -> std::result::Result<String, ErrorData> {
+        self.refresh_runtime_state()?;
         render_json(
             save_message(
                 &self.db_path,
@@ -410,6 +421,7 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(args): Parameters<SaveConversationTurnArgs>,
     ) -> std::result::Result<String, ErrorData> {
+        self.refresh_runtime_state()?;
         render_json(
             save_conversation_turn(
                 &self.db_path,
@@ -427,6 +439,7 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(ProviderHashArgs { provider, hash_id }): Parameters<ProviderHashArgs>,
     ) -> std::result::Result<String, ErrorData> {
+        self.refresh_runtime_state()?;
         render_json(
             forget_conversation(
                 &self.db_path,
@@ -442,6 +455,7 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(ProviderHashArgs { provider, hash_id }): Parameters<ProviderHashArgs>,
     ) -> std::result::Result<String, ErrorData> {
+        self.refresh_runtime_state()?;
         render_json(
             delete_history(
                 &self.db_path,
@@ -457,6 +471,7 @@ impl CliMemoryMcpServer {
         &self,
         Parameters(ProviderHashArgs { provider, hash_id }): Parameters<ProviderHashArgs>,
     ) -> std::result::Result<String, ErrorData> {
+        self.refresh_runtime_state()?;
         render_json(
             clear_session(
                 &self.db_path,
@@ -469,13 +484,14 @@ impl CliMemoryMcpServer {
 
     #[tool(name = "stats", description = "Return memory database counts and embedding totals.")]
     fn memory_stats(&self) -> std::result::Result<String, ErrorData> {
+        self.refresh_runtime_state()?;
         render_json(memory_stats(&self.db_path).map_err(internal_error)?)
     }
 }
 
 #[tool_handler(
     name = "cli-memory",
-    version = "0.1.15",
+    version = "0.1.16",
     instructions = "Local cross-CLI memory retrieval server."
 )]
 impl ServerHandler for CliMemoryMcpServer {}

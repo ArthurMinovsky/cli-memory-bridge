@@ -16,6 +16,16 @@ fn main() {
     match cli.command {
         Commands::Init => {
             let summary = run_init().expect("init should succeed");
+            let binary_path = std::env::current_exe().expect("current executable path should resolve");
+            let home = cli_memory_app::bootstrap::configured_home().expect("home should resolve");
+            let detected = cli_memory_integrations::detect_providers(&home)
+                .expect("provider detection should succeed after init");
+            let install_summary = install::ensure_detected_integrations(
+                &home,
+                &detected,
+                &binary_path.display().to_string(),
+            )
+            .expect("detected integrations should install");
             println!(
                 "detected {} providers, checkpointed {} sources, imported {} conversations / {} messages",
                 summary.provider_count, summary.checkpoint_count
@@ -23,6 +33,18 @@ fn main() {
             );
             if !summary.providers.is_empty() {
                 println!("{}", summary.providers.join(","));
+            }
+            if !install_summary.installed.is_empty() {
+                println!(
+                    "installed cli-memory integrations: {}",
+                    install_summary.installed.join(",")
+                );
+            }
+            if !install_summary.skipped.is_empty() {
+                println!(
+                    "skipped existing integrations: {}",
+                    install_summary.skipped.join(",")
+                );
             }
         }
         Commands::Refresh => {
@@ -81,8 +103,7 @@ fn main() {
         }
         Commands::Serve => mcp::serve_stdio().expect("serve should succeed"),
         Commands::Resume { hash_id } => {
-            eprintln!("cli-memory: refreshing local conversation sources...");
-            run_refresh().expect("refresh before resume should succeed");
+            refresh_runtime_state("resume");
             let storage = Storage::open(configured_db_path().expect("db path should resolve"))
                 .expect("storage should open");
             match storage
@@ -104,6 +125,7 @@ fn main() {
             }
         }
         Commands::Forget { provider, hash_id } => {
+            refresh_runtime_state("forget");
             let provider = ProviderKind::from_slug(&provider).expect("provider should be valid");
             let storage = Storage::open(configured_db_path().expect("db path should resolve"))
                 .expect("storage should open");
@@ -117,11 +139,10 @@ fn main() {
             }
         }
         Commands::ConvSearch { query } => {
-            eprintln!("cli-memory: refreshing local conversation sources...");
-            run_refresh().expect("refresh before conversation search should succeed");
+            refresh_runtime_state("conv-search");
             let storage = Storage::open(configured_db_path().expect("db path should resolve"))
                 .expect("storage should open");
-            eprintln!("cli-memory: searching indexed conversation history...");
+            eprintln!("cmb: searching indexed conversation history...");
             let results = storage
                 .search_conversations(&query, 10)
                 .expect("conversation search should succeed");
@@ -132,6 +153,7 @@ fn main() {
             }
         }
         Commands::Doctor => {
+            refresh_runtime_state("doctor");
             let status = doctor::inspect().expect("doctor should succeed");
             println!(
                 "{}",
@@ -139,6 +161,7 @@ fn main() {
             );
         }
         Commands::Stats => {
+            refresh_runtime_state("stats");
             let value = mcp::memory_stats(configured_db_path().expect("db path should resolve"))
                 .expect("stats should succeed");
             println!(
@@ -147,6 +170,11 @@ fn main() {
             );
         }
     }
+}
+
+fn refresh_runtime_state(command_name: &str) {
+    eprintln!("cmb: refreshing local conversation sources before {command_name}...");
+    run_refresh().expect("refresh before command should succeed");
 }
 
 fn find_exact_source_matches(storage: &Storage, needle: &str) -> anyhow::Result<Vec<String>> {

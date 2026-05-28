@@ -16,6 +16,19 @@ fn binary_reports_help() {
 }
 
 #[test]
+fn cmb_binary_reports_help() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cmb"))
+        .arg("--help")
+        .output()
+        .expect("cmb binary should run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("cmb"));
+    assert!(stdout.contains("init"));
+}
+
+#[test]
 fn help_lists_resume_and_conv_search() {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
         .arg("--help")
@@ -45,7 +58,7 @@ fn codex_resume_skill_contains_resume_instruction() {
 fn codex_forget_skill_contains_provider_scoped_instruction() {
     let text = cli_memory_integrations::render_codex_forget_skill();
     assert!(text.contains("$forget"));
-    assert!(text.contains("cli-memory forget codex <hash-id>"));
+    assert!(text.contains("cmb forget codex <hash-id>"));
 }
 
 #[test]
@@ -142,6 +155,106 @@ fn install_command_renders_codex_bundle() {
     assert!(stdout.contains("$resume"));
     assert!(stdout.contains("$conv-search"));
     assert!(stdout.contains("$forget"));
+}
+
+#[test]
+fn init_installs_missing_integrations_for_detected_providers() {
+    let home = tempfile::tempdir().expect("temporary directory should be created");
+    let data_dir = tempfile::tempdir().expect("temporary data directory should be created");
+    let model_dir = tempfile::tempdir().expect("temporary model directory should be created");
+
+    let codex_session = home.path().join(".codex/sessions/session.jsonl");
+    std::fs::create_dir_all(codex_session.parent().expect("codex parent should exist"))
+        .expect("Codex sessions directory should be created");
+    std::fs::write(home.path().join(".codex/session_index.jsonl"), "{}\n")
+        .expect("Codex session index should be written");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/codex/minimal-session.jsonl"
+        ),
+        &codex_session,
+    )
+    .expect("Codex fixture should be copied");
+
+    let gemini_session = home
+        .path()
+        .join(".gemini/tmp/project/chats/session-1.json");
+    std::fs::create_dir_all(gemini_session.parent().expect("gemini parent should exist"))
+        .expect("Gemini directory should be created");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/gemini/minimal-session.json"
+        ),
+        &gemini_session,
+    )
+    .expect("Gemini fixture should be copied");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+        .arg("init")
+        .env("CLI_MEMORY_HOME", home.path())
+        .env("CLI_MEMORY_DATA_DIR", data_dir.path())
+        .env("CLI_MEMORY_MODEL_PATH", model_dir.path())
+        .output()
+        .expect("init should run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("installed cli-memory integrations:"));
+
+    let codex_config =
+        std::fs::read_to_string(home.path().join(".codex/config.toml")).expect("codex config should read");
+    assert!(codex_config.contains("[mcp_servers.cli-memory]"));
+    assert!(codex_config.contains("args = [\"serve\"]"));
+
+    let gemini_settings = std::fs::read_to_string(home.path().join(".gemini/settings.json"))
+        .expect("gemini settings should read");
+    assert!(gemini_settings.contains("\"cli-memory\""));
+    assert!(gemini_settings.contains("\"serve\""));
+}
+
+#[test]
+fn init_skips_existing_integrations_without_duplication() {
+    let home = tempfile::tempdir().expect("temporary directory should be created");
+    let data_dir = tempfile::tempdir().expect("temporary data directory should be created");
+    let model_dir = tempfile::tempdir().expect("temporary model directory should be created");
+
+    let codex_session = home.path().join(".codex/sessions/session.jsonl");
+    std::fs::create_dir_all(codex_session.parent().expect("codex parent should exist"))
+        .expect("Codex sessions directory should be created");
+    std::fs::write(home.path().join(".codex/session_index.jsonl"), "{}\n")
+        .expect("Codex session index should be written");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/codex/minimal-session.jsonl"
+        ),
+        &codex_session,
+    )
+    .expect("Codex fixture should be copied");
+    std::fs::write(
+        home.path().join(".codex/config.toml"),
+        "[mcp_servers.cli-memory]\ncommand = \"/tmp/existing\"\nargs = [\"serve\"]\n",
+    )
+    .expect("existing codex config should be written");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+        .arg("init")
+        .env("CLI_MEMORY_HOME", home.path())
+        .env("CLI_MEMORY_DATA_DIR", data_dir.path())
+        .env("CLI_MEMORY_MODEL_PATH", model_dir.path())
+        .output()
+        .expect("init should run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("skipped existing integrations: codex"));
+
+    let codex_config =
+        std::fs::read_to_string(home.path().join(".codex/config.toml")).expect("codex config should read");
+    assert_eq!(codex_config.matches("[mcp_servers.cli-memory]").count(), 1);
+    assert!(codex_config.contains("command = \"/tmp/existing\""));
 }
 
 #[test]
@@ -759,6 +872,66 @@ fn stats_prints_json_counts() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("\"total_conversations\""));
     assert!(stdout.contains("\"total_messages\""));
+}
+
+#[test]
+fn stats_refreshes_before_counting_new_conversations() {
+    let home = tempfile::tempdir().expect("temporary directory should be created");
+    let data_dir = tempfile::tempdir().expect("temporary data directory should be created");
+    let model_dir = tempfile::tempdir().expect("temporary model directory should be created");
+    let codex_dir = home.path().join(".codex/sessions");
+    let first_session = codex_dir.join("session-a.jsonl");
+    let second_session = codex_dir.join("session-b.jsonl");
+
+    std::fs::create_dir_all(&codex_dir).expect("Codex sessions directory should be created");
+    std::fs::write(home.path().join(".codex/session_index.jsonl"), "{}
+")
+        .expect("Codex session index should be written");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/codex/minimal-session.jsonl"
+        ),
+        &first_session,
+    )
+    .expect("Codex fixture should be copied");
+
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+        .arg("init")
+        .env("CLI_MEMORY_HOME", home.path())
+        .env("CLI_MEMORY_DATA_DIR", data_dir.path())
+        .env("CLI_MEMORY_MODEL_PATH", model_dir.path())
+        .output()
+        .expect("init should run");
+    assert!(init.status.success());
+
+    let second_text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/codex/minimal-session.jsonl"
+    ))
+    .expect("fixture should read")
+    .replace(
+        "019e3c95-ac82-7402-bb65-f9bf46673f1f",
+        "019e3c95-ac82-7402-bb65-f9bf46673fab",
+    )
+    .replace(
+        "How do I install this?",
+        "How do I count this through stats?",
+    );
+    std::fs::write(&second_session, second_text).expect("second session should be written");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cli-memory"))
+        .arg("stats")
+        .env("CLI_MEMORY_HOME", home.path())
+        .env("CLI_MEMORY_DATA_DIR", data_dir.path())
+        .env("CLI_MEMORY_MODEL_PATH", model_dir.path())
+        .output()
+        .expect("stats should run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"total_conversations\": 2"));
+    assert!(stdout.contains("\"total_messages\": 4"));
 }
 
 #[test]

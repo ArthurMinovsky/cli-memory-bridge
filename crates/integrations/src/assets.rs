@@ -9,7 +9,7 @@ pub fn render_codex_conv_search_skill() -> String {
 }
 
 pub fn render_codex_forget_skill() -> String {
-    "$forget\nUse the cli-memory forget flow with both provider and hash id, for example `cli-memory forget codex <hash-id>`."
+    "$forget\nUse the cli-memory forget flow with both provider and hash id, for example `cmb forget codex <hash-id>`."
         .to_owned()
 }
 
@@ -24,6 +24,6 @@ pub fn render_claude_conv_search_command() -> String {
 }
 
 pub fn render_claude_forget_command() -> String {
-    "/forget\nUse the cli-memory forget flow with both provider and hash id, for example `cli-memory forget claude <hash-id>`."
+    "/forget\nUse the cli-memory forget flow with both provider and hash id, for example `cmb forget claude <hash-id>`."
         .to_owned()
 }

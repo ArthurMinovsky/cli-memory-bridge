@@ -1,6 +1,6 @@
 {
   "name": "@aminovsky/cli-memory",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Cross-CLI memory bridge with local transcript import, MCP serving, and npx distribution",
   "license": "Apache-2.0",
   "private": false,
@@ -25,7 +25,8 @@
     "hermes"
   ],
   "bin": {
-    "cli-memory": "npm/bin/cli-memory.js"
+    "cli-memory": "npm/bin/cli-memory.js",
+    "cmb": "npm/bin/cli-memory.js"
   },
   "scripts": {
     "postinstall": "node npm/install.js"

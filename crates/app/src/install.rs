@@ -1,5 +1,11 @@
-use anyhow::Result;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use anyhow::{Context, Result};
 use cli_memory_core::ProviderKind;
+use cli_memory_integrations::DetectedProvider;
 use serde_json::{Value, json};
 
 pub fn all_providers() -> &'static [ProviderKind] {
@@ -215,4 +221,170 @@ pub fn render_uninstall_bundle() -> Result<Value> {
         "unlink_all_command": "cli-memory unlink --all",
         "npm_uninstall_command": "npm uninstall -g @aminovsky/cli-memory",
     }))
+}
+
+pub struct IntegrationInstallSummary {
+    pub installed: Vec<String>,
+    pub skipped: Vec<String>,
+}
+
+pub fn ensure_detected_integrations(
+    home: &Path,
+    detected: &[DetectedProvider],
+    binary_path: &str,
+) -> Result<IntegrationInstallSummary> {
+    let mut installed = Vec::new();
+    let mut skipped = Vec::new();
+
+    for provider in detected {
+        let changed = match provider.provider {
+            ProviderKind::Codex => ensure_toml_snippet(
+                &home.join(".codex/config.toml"),
+                "[mcp_servers.cli-memory]",
+                &cli_memory_integrations::render_codex_install(binary_path),
+            )?,
+            ProviderKind::Claude => ensure_json_entry(
+                &home.join(".claude/settings.json"),
+                &["mcpServers", "cli-memory"],
+                json!({
+                    "command": binary_path,
+                    "args": ["serve"],
+                }),
+            )?,
+            ProviderKind::Gemini => ensure_json_entry(
+                &preferred_existing_json_path(
+                    &[
+                        home.join(".gemini/settings.json"),
+                        home.join(".gemini/config/mcp_config.json"),
+                    ],
+                    home.join(".gemini/settings.json"),
+                ),
+                &["mcpServers", "cli-memory"],
+                json!({
+                    "command": binary_path,
+                    "args": ["serve"],
+                }),
+            )?,
+            ProviderKind::OpenCode => ensure_json_entry(
+                &home.join(".config/opencode/opencode.json"),
+                &["mcp", "cli-memory"],
+                json!({
+                    "type": "local",
+                    "command": [binary_path, "serve"],
+                    "enabled": true,
+                }),
+            )?,
+            ProviderKind::Copilot => ensure_json_entry(
+                &home.join(".copilot/mcp-config.json"),
+                &["mcpServers", "cli-memory"],
+                json!({
+                    "type": "local",
+                    "command": binary_path,
+                    "args": ["serve"],
+                    "tools": ["*"],
+                }),
+            )?,
+            ProviderKind::Hermes => ensure_toml_snippet(
+                &home.join(".hermes/config.yaml"),
+                "cli-memory:",
+                &cli_memory_integrations::render_hermes_install(binary_path),
+            )?,
+            ProviderKind::Zed => ensure_json_entry(
+                &home.join(".config/zed/settings.json"),
+                &["context_servers", "cli-memory"],
+                json!({
+                    "enabled": true,
+                    "remote": false,
+                    "command": binary_path,
+                    "args": ["serve"],
+                }),
+            )?,
+            ProviderKind::AntigravityCli => ensure_json_entry(
+                &home.join(".gemini/antigravity-cli/settings.json"),
+                &["mcpServers", "cli-memory"],
+                json!({
+                    "command": binary_path,
+                    "args": ["serve"],
+                }),
+            )?,
+        };
+
+        if changed {
+            installed.push(provider.provider.as_slug().to_owned());
+        } else {
+            skipped.push(provider.provider.as_slug().to_owned());
+        }
+    }
+
+    Ok(IntegrationInstallSummary { installed, skipped })
+}
+
+fn preferred_existing_json_path(candidates: &[PathBuf], fallback: PathBuf) -> PathBuf {
+    candidates
+        .iter()
+        .find(|path| path.exists())
+        .cloned()
+        .unwrap_or(fallback)
+}
+
+fn ensure_toml_snippet(path: &Path, marker: &str, snippet: &str) -> Result<bool> {
+    let existing = fs::read_to_string(path).unwrap_or_default();
+    if existing.contains(marker) {
+        return Ok(false);
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create config directory {}", parent.display()))?;
+    }
+
+    let mut updated = existing;
+    if !updated.is_empty() && !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated.push_str(snippet);
+    fs::write(path, updated)
+        .with_context(|| format!("failed to write config {}", path.display()))?;
+    Ok(true)
+}
+
+fn ensure_json_entry(path: &Path, key_path: &[&str], entry: Value) -> Result<bool> {
+    let mut root = if path.exists() {
+        serde_json::from_str::<Value>(&fs::read_to_string(path).with_context(|| {
+            format!("failed to read config {}", path.display())
+        })?)
+        .with_context(|| format!("failed to parse json config {}", path.display()))?
+    } else {
+        json!({})
+    };
+
+    let mut cursor = &mut root;
+    for key in &key_path[..key_path.len() - 1] {
+        if !cursor.is_object() {
+            *cursor = json!({});
+        }
+        let object = cursor.as_object_mut().expect("json object should exist");
+        cursor = object.entry((*key).to_owned()).or_insert_with(|| json!({}));
+    }
+
+    if !cursor.is_object() {
+        *cursor = json!({});
+    }
+    let object = cursor.as_object_mut().expect("json object should exist");
+    let leaf = key_path[key_path.len() - 1];
+    if object.contains_key(leaf) {
+        return Ok(false);
+    }
+    object.insert(leaf.to_owned(), entry);
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create config directory {}", parent.display()))?;
+    }
+    fs::write(
+        path,
+        serde_json::to_string_pretty(&root).expect("json config should serialize"),
+    )
+    .with_context(|| format!("failed to write config {}", path.display()))?;
+    Ok(true)
 }
