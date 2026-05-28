@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context, Result};
 use cli_memory_core::ProviderKind;
 use cli_memory_integrations::DetectedProvider;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 pub fn all_providers() -> &'static [ProviderKind] {
     &[
@@ -348,12 +348,42 @@ fn ensure_toml_snippet(path: &Path, marker: &str, snippet: &str) -> Result<bool>
     Ok(true)
 }
 
+fn strip_jsonc_comments(raw: &str) -> String {
+    raw.lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !trimmed.starts_with("//")
+        })
+        .map(|line| {
+            // Remove inline // comments, but be cautious about strings
+            // Simple heuristic: strip everything after // that is not inside quotes
+            if let Some(pos) = line.find("//") {
+                let before = &line[..pos];
+                // Only strip if // is outside of strings (even count of unescaped " before it)
+                let quote_count = before.chars().filter(|&c| c == '"').count();
+                if quote_count % 2 == 0 {
+                    before.to_string()
+                } else {
+                    line.to_string()
+                }
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        // Also remove trailing commas before ] or }
+        .replace(",]", "]")
+        .replace(",}", "}")
+}
+
 fn ensure_json_entry(path: &Path, key_path: &[&str], entry: Value) -> Result<bool> {
     let mut root = if path.exists() {
-        serde_json::from_str::<Value>(&fs::read_to_string(path).with_context(|| {
-            format!("failed to read config {}", path.display())
-        })?)
-        .with_context(|| format!("failed to parse json config {}", path.display()))?
+        let raw = fs::read_to_string(path)
+            .with_context(|| format!("failed to read config {}", path.display()))?;
+        let cleaned = strip_jsonc_comments(&raw);
+        serde_json::from_str::<Value>(&cleaned)
+            .with_context(|| format!("failed to parse json config {}", path.display()))?
     } else {
         json!({})
     };

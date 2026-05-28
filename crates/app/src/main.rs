@@ -16,16 +16,22 @@ fn main() {
     match cli.command {
         Commands::Init => {
             let summary = run_init().expect("init should succeed");
-            let binary_path = std::env::current_exe().expect("current executable path should resolve");
+            let binary_path =
+                std::env::current_exe().expect("current executable path should resolve");
             let home = cli_memory_app::bootstrap::configured_home().expect("home should resolve");
             let detected = cli_memory_integrations::detect_providers(&home)
                 .expect("provider detection should succeed after init");
-            let install_summary = install::ensure_detected_integrations(
+            let install_summary = match install::ensure_detected_integrations(
                 &home,
                 &detected,
                 &binary_path.display().to_string(),
-            )
-            .expect("detected integrations should install");
+            ) {
+                Ok(summary) => Some(summary),
+                Err(e) => {
+                    eprintln!("cmb: install integrations skipped ({e})");
+                    None
+                }
+            };
             println!(
                 "detected {} providers, checkpointed {} sources, imported {} conversations / {} messages",
                 summary.provider_count, summary.checkpoint_count
@@ -34,17 +40,19 @@ fn main() {
             if !summary.providers.is_empty() {
                 println!("{}", summary.providers.join(","));
             }
-            if !install_summary.installed.is_empty() {
-                println!(
-                    "installed cli-memory integrations: {}",
-                    install_summary.installed.join(",")
-                );
-            }
-            if !install_summary.skipped.is_empty() {
-                println!(
-                    "skipped existing integrations: {}",
-                    install_summary.skipped.join(",")
-                );
+            if let Some(summary) = install_summary {
+                if !summary.installed.is_empty() {
+                    println!(
+                        "installed cli-memory integrations: {}",
+                        summary.installed.join(",")
+                    );
+                }
+                if !summary.skipped.is_empty() {
+                    println!(
+                        "skipped existing integrations: {}",
+                        summary.skipped.join(",")
+                    );
+                }
             }
         }
         Commands::Refresh => {
@@ -59,7 +67,8 @@ fn main() {
             }
         }
         Commands::Install { provider, all } => {
-            let binary_path = std::env::current_exe().expect("current executable path should resolve");
+            let binary_path =
+                std::env::current_exe().expect("current executable path should resolve");
             let bundle = if all {
                 install::render_install_all_bundle(&binary_path.display().to_string())
                     .expect("install-all bundle should render")
@@ -68,11 +77,8 @@ fn main() {
                     .as_deref()
                     .expect("provider should be passed unless --all is used");
                 let provider = ProviderKind::from_slug(provider).expect("provider should be valid");
-                install::render_install_bundle(
-                    provider,
-                    &binary_path.display().to_string(),
-                )
-                .expect("install bundle should render")
+                install::render_install_bundle(provider, &binary_path.display().to_string())
+                    .expect("install bundle should render")
             };
             println!(
                 "{}",
@@ -95,7 +101,8 @@ fn main() {
             );
         }
         Commands::Uninstall => {
-            let bundle = install::render_uninstall_bundle().expect("uninstall bundle should render");
+            let bundle =
+                install::render_uninstall_bundle().expect("uninstall bundle should render");
             println!(
                 "{}",
                 serde_json::to_string_pretty(&bundle).expect("uninstall bundle should serialize")
@@ -135,7 +142,11 @@ fn main() {
             {
                 println!("forgot {} {}", provider.as_slug(), hash_id);
             } else {
-                println!("no conversation found for {} {}", provider.as_slug(), hash_id);
+                println!(
+                    "no conversation found for {} {}",
+                    provider.as_slug(),
+                    hash_id
+                );
             }
         }
         Commands::ConvSearch { query } => {
@@ -183,7 +194,11 @@ fn find_exact_source_matches(storage: &Storage, needle: &str) -> anyhow::Result<
         let path = PathBuf::from(&source.source_path);
         if path.is_file() {
             if file_contains_exact(&path, needle) {
-                matches.insert(format!("[{}] {}", source.provider.as_slug(), path.display()));
+                matches.insert(format!(
+                    "[{}] {}",
+                    source.provider.as_slug(),
+                    path.display()
+                ));
             }
             continue;
         }
