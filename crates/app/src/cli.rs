@@ -24,10 +24,17 @@ pub enum Commands {
     },
     Uninstall,
     Serve,
-    Resume { hash_id: String },
-    Forget { provider: String, hash_id: String },
+    Resume {
+        hash_id: String,
+    },
+    Forget {
+        provider: String,
+        hash_id: String,
+    },
     #[command(name = "conv-search")]
-    ConvSearch { query: String },
+    ConvSearch {
+        query: String,
+    },
     Doctor,
     Stats,
 }

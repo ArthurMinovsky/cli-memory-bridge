@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use cli_memory_core::models::MessageRole;
 
-use crate::{Embedder, EmbeddedMessageRow, MessageRow, Storage, VectorStore};
+use crate::{EmbeddedMessageRow, Embedder, MessageRow, Storage, VectorStore};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct RetrievalDocument {
@@ -58,9 +58,7 @@ impl RetrievalService {
         };
         let embedded = storage.list_embedded_messages()?;
         if !embedded.is_empty() {
-            for message in embedded {
-                service.ingest_embedded_message(message)?;
-            }
+            service.ingest_embedded_messages_batched(embedded)?;
             return Ok(service);
         }
 
@@ -71,12 +69,7 @@ impl RetrievalService {
         Ok(service)
     }
 
-    pub fn ingest_text(
-        &mut self,
-        provider: &str,
-        conversation_id: &str,
-        text: &str,
-    ) -> Result<()> {
+    pub fn ingest_text(&mut self, provider: &str, conversation_id: &str, text: &str) -> Result<()> {
         self.ingest_document(RetrievalDocument {
             provider: provider.to_owned(),
             conversation_id: conversation_id.to_owned(),
@@ -120,20 +113,40 @@ impl RetrievalService {
         Ok(out)
     }
 
-    fn ingest_embedded_message(&mut self, message: EmbeddedMessageRow) -> Result<()> {
-        let id = self.next_id;
-        self.next_id += 1;
-        self.index.add(id, &message.embedding)?;
-        self.docs.insert(
-            id,
-            RetrievalDocument {
-                provider: message.provider.as_slug().to_owned(),
-                conversation_id: message.conversation_id,
-                message_id: message.message_id,
-                role: message.role,
-                content: message.content,
-            },
-        );
+    fn ingest_embedded_messages_batched(
+        &mut self,
+        messages: Vec<EmbeddedMessageRow>,
+    ) -> Result<()> {
+        // Collect all IDs, vectors, and documents for batch operations
+        let mut ids = Vec::with_capacity(messages.len());
+        let mut vectors = Vec::with_capacity(messages.len());
+        let mut docs_to_insert = Vec::with_capacity(messages.len());
+
+        for message in messages {
+            let id = self.next_id;
+            self.next_id += 1;
+            ids.push(id);
+            vectors.push(message.embedding);
+            docs_to_insert.push((
+                id,
+                RetrievalDocument {
+                    provider: message.provider.as_slug().to_owned(),
+                    conversation_id: message.conversation_id,
+                    message_id: message.message_id,
+                    role: message.role,
+                    content: message.content,
+                },
+            ));
+        }
+
+        // Batch add all vectors at once - this triggers codebook computation only once
+        self.index.add_batch(&ids, &vectors)?;
+
+        // Insert all documents
+        for (id, doc) in docs_to_insert {
+            self.docs.insert(id, doc);
+        }
+
         Ok(())
     }
 
@@ -144,11 +157,15 @@ impl RetrievalService {
             .collect::<Vec<_>>();
         let vectors = self.embedder.embed_documents(&texts)?;
 
-        for (message, vector) in messages.into_iter().zip(vectors.into_iter()) {
+        // Collect all IDs and vectors for batch add
+        let mut ids = Vec::with_capacity(messages.len());
+        let mut docs_to_insert = Vec::with_capacity(messages.len());
+
+        for message in messages {
             let id = self.next_id;
             self.next_id += 1;
-            self.index.add(id, &vector)?;
-            self.docs.insert(
+            ids.push(id);
+            docs_to_insert.push((
                 id,
                 RetrievalDocument {
                     provider: message.provider.as_slug().to_owned(),
@@ -157,7 +174,15 @@ impl RetrievalService {
                     role: message.role,
                     content: message.content,
                 },
-            );
+            ));
+        }
+
+        // Batch add all vectors at once - this triggers codebook computation only once
+        self.index.add_batch(&ids, &vectors)?;
+
+        // Insert all documents
+        for (id, doc) in docs_to_insert {
+            self.docs.insert(id, doc);
         }
 
         Ok(())

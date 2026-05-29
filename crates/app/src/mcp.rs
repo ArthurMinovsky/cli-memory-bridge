@@ -17,7 +17,6 @@ use rmcp::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     bootstrap::{configured_db_path, configured_home, run_refresh},
@@ -268,15 +267,13 @@ pub fn memory_stats(db_path: impl AsRef<Path>) -> Result<Value> {
 struct CliMemoryMcpServer {
     db_path: PathBuf,
     retrieval: std::sync::Arc<std::sync::RwLock<Option<cli_memory_engine::RetrievalService>>>,
-    quit_token: std::sync::Arc<CancellationToken>,
 }
 
 impl CliMemoryMcpServer {
-    fn new(quit_token: std::sync::Arc<CancellationToken>) -> Result<Self> {
+    fn new() -> Result<Self> {
         Ok(Self {
             db_path: configured_db_path()?,
             retrieval: std::sync::Arc::new(std::sync::RwLock::new(None)),
-            quit_token,
         })
     }
 
@@ -287,16 +284,6 @@ impl CliMemoryMcpServer {
         }
         Ok(())
     }
-
-    /// Cancel the server quit token so the event loop exits after the response
-    /// is flushed.  Each tool handler calls this on its return path.
-    fn tool_done(
-        &self,
-        result: std::result::Result<String, ErrorData>,
-    ) -> std::result::Result<String, ErrorData> {
-        self.quit_token.cancel();
-        result
-    }
 }
 
 #[tool_router]
@@ -304,18 +291,18 @@ impl CliMemoryMcpServer {
     #[tool(name = "doctor", description = "Return cli-memory server and storage health.")]
     fn health_check(&self) -> std::result::Result<String, ErrorData> {
         self.refresh_runtime_state()?;
-        self.tool_done(render_json(health_check(&doctor::inspect().map_err(internal_error)?)))
+        render_json(health_check(&doctor::inspect().map_err(internal_error)?))
     }
 
     #[tool(name = "discover-providers", description = "Detect supported local transcript providers on this machine.")]
     fn discover_providers(&self) -> std::result::Result<String, ErrorData> {
         self.refresh_runtime_state()?;
-        self.tool_done(render_json(discover_providers().map_err(internal_error)?))
+        render_json(discover_providers().map_err(internal_error)?)
     }
 
     #[tool(name = "refresh", description = "Incrementally import newly changed conversation sources.")]
     fn refresh_imports(&self) -> std::result::Result<String, ErrorData> {
-        self.tool_done(render_json(refresh_imports().map_err(internal_error)?))
+        render_json(refresh_imports().map_err(internal_error)?)
     }
 
     #[tool(name = "resume", description = "Resume a stored conversation transcript by stable hash id.")]
@@ -324,7 +311,7 @@ impl CliMemoryMcpServer {
         Parameters(ResumeConversationArgs { hash_id }): Parameters<ResumeConversationArgs>,
     ) -> std::result::Result<String, ErrorData> {
         self.refresh_runtime_state()?;
-        self.tool_done(render_json(resume_conversation(&self.db_path, &hash_id).map_err(internal_error)?))
+        render_json(resume_conversation(&self.db_path, &hash_id).map_err(internal_error)?)
     }
 
     #[tool(name = "conv-search", description = "Search imported conversation content.")]
@@ -366,11 +353,11 @@ impl CliMemoryMcpServer {
         
         let results: Vec<String> = ranked.into_iter().take(target_limit).map(|(hit, _)| hit).collect();
         
-        self.tool_done(render_json(json!({
+        render_json(json!({
             "status": "ok",
             "query": query,
             "results": results,
-        })))
+        }))
     }
 
     #[tool(name = "context-bundle", description = "Build a retrieval bundle for a query.")]
@@ -386,10 +373,10 @@ impl CliMemoryMcpServer {
         }
         let service = locked.as_ref().unwrap();
         
-        self.tool_done(render_json(
+        render_json(
             context_bundle_with_service(&service, &query, char_budget.unwrap_or(1200))
                 .map_err(internal_error)?,
-        ))
+        )
     }
 
     #[tool(name = "recent-history", description = "Return recent stored messages.")]
@@ -398,7 +385,7 @@ impl CliMemoryMcpServer {
         Parameters(GetRecentHistoryArgs { limit }): Parameters<GetRecentHistoryArgs>,
     ) -> std::result::Result<String, ErrorData> {
         self.refresh_runtime_state()?;
-        self.tool_done(render_json(get_recent_history(&self.db_path, limit.unwrap_or(20)).map_err(internal_error)?))
+        render_json(get_recent_history(&self.db_path, limit.unwrap_or(20)).map_err(internal_error)?)
     }
 
     #[tool(name = "search-history", description = "Run storage-backed conversation search.")]
@@ -407,7 +394,7 @@ impl CliMemoryMcpServer {
         Parameters(SearchHistoryArgs { query, limit }): Parameters<SearchHistoryArgs>,
     ) -> std::result::Result<String, ErrorData> {
         self.refresh_runtime_state()?;
-        self.tool_done(render_json(search_history(&self.db_path, &query, limit.unwrap_or(10)).map_err(internal_error)?))
+        render_json(search_history(&self.db_path, &query, limit.unwrap_or(10)).map_err(internal_error)?)
     }
 
     #[tool(name = "save-message", description = "Save a single provider-scoped message into memory.")]
@@ -416,7 +403,7 @@ impl CliMemoryMcpServer {
         Parameters(args): Parameters<SaveMessageArgs>,
     ) -> std::result::Result<String, ErrorData> {
         self.refresh_runtime_state()?;
-        self.tool_done(render_json(
+        render_json(
             save_message(
                 &self.db_path,
                 parse_provider(&args.provider).map_err(invalid_params)?,
@@ -426,7 +413,7 @@ impl CliMemoryMcpServer {
                 &args.content,
             )
             .map_err(internal_error)?,
-        ))
+        )
     }
 
     #[tool(name = "save-conversation-turn", description = "Save a user/assistant turn pair.")]
@@ -435,7 +422,7 @@ impl CliMemoryMcpServer {
         Parameters(args): Parameters<SaveConversationTurnArgs>,
     ) -> std::result::Result<String, ErrorData> {
         self.refresh_runtime_state()?;
-        self.tool_done(render_json(
+        render_json(
             save_conversation_turn(
                 &self.db_path,
                 parse_provider(&args.provider).map_err(invalid_params)?,
@@ -444,7 +431,7 @@ impl CliMemoryMcpServer {
                 &args.assistant_message,
             )
             .map_err(internal_error)?,
-        ))
+        )
     }
 
     #[tool(name = "forget", description = "Soft-ban a conversation from future retrieval.")]
@@ -453,14 +440,14 @@ impl CliMemoryMcpServer {
         Parameters(ProviderHashArgs { provider, hash_id }): Parameters<ProviderHashArgs>,
     ) -> std::result::Result<String, ErrorData> {
         self.refresh_runtime_state()?;
-        self.tool_done(render_json(
+        render_json(
             forget_conversation(
                 &self.db_path,
                 parse_provider(&provider).map_err(invalid_params)?,
                 &hash_id,
             )
             .map_err(internal_error)?,
-        ))
+        )
     }
 
     #[tool(name = "delete-history", description = "Delete a provider-scoped conversation from local storage.")]
@@ -469,14 +456,14 @@ impl CliMemoryMcpServer {
         Parameters(ProviderHashArgs { provider, hash_id }): Parameters<ProviderHashArgs>,
     ) -> std::result::Result<String, ErrorData> {
         self.refresh_runtime_state()?;
-        self.tool_done(render_json(
+        render_json(
             delete_history(
                 &self.db_path,
                 parse_provider(&provider).map_err(invalid_params)?,
                 &hash_id,
             )
             .map_err(internal_error)?,
-        ))
+        )
     }
 
     #[tool(name = "clear-session", description = "Clear a provider-scoped session transcript while keeping indexes coherent.")]
@@ -485,26 +472,26 @@ impl CliMemoryMcpServer {
         Parameters(ProviderHashArgs { provider, hash_id }): Parameters<ProviderHashArgs>,
     ) -> std::result::Result<String, ErrorData> {
         self.refresh_runtime_state()?;
-        self.tool_done(render_json(
+        render_json(
             clear_session(
                 &self.db_path,
                 parse_provider(&provider).map_err(invalid_params)?,
                 &hash_id,
             )
             .map_err(internal_error)?,
-        ))
+        )
     }
 
     #[tool(name = "stats", description = "Return memory database counts and embedding totals.")]
     fn memory_stats(&self) -> std::result::Result<String, ErrorData> {
         self.refresh_runtime_state()?;
-        self.tool_done(render_json(memory_stats(&self.db_path).map_err(internal_error)?))
+        render_json(memory_stats(&self.db_path).map_err(internal_error)?)
     }
 }
 
 #[tool_handler(
     name = "cli-memory",
-    version = "0.2.1",
+    version = "0.2.4",
     instructions = "Local cross-CLI memory retrieval server."
 )]
 impl ServerHandler for CliMemoryMcpServer {}
@@ -553,6 +540,13 @@ fn kill_orphaned_instances() {
 pub fn serve_stdio() -> Result<()> {
     kill_orphaned_instances();
 
+    // Pre-load the embedding model into memory BEFORE accepting MCP connections.
+    // Embedder::global() uses OnceLock — loads once from disk (~2-3s), then stays
+    // in RAM with zero CPU cost when idle. Subsequent tool calls are instant.
+    eprintln!("cmb: pre-loading embedding model...");
+    let _ = Embedder::global();
+    eprintln!("cmb: embedding model ready");
+
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
         .enable_all()
@@ -560,9 +554,9 @@ pub fn serve_stdio() -> Result<()> {
         .context("failed to build tokio runtime for MCP server")?;
 
     runtime.block_on(async {
-        let quit = CancellationToken::new();
-        let server = CliMemoryMcpServer::new(std::sync::Arc::new(quit.clone()))?;
-        
+        let server = CliMemoryMcpServer::new()?;
+
+        // Pre-warm the retrieval service cache in background
         let retrieval_cache = server.retrieval.clone();
         let db_path = server.db_path.clone();
         tokio::task::spawn_blocking(move || {
@@ -577,7 +571,8 @@ pub fn serve_stdio() -> Result<()> {
             }
         });
 
-        let service = server.serve_with_ct(stdio(), quit).await?;
+        // Server stays alive to handle multiple tool calls (required for MCP clients)
+        let service = server.serve(stdio()).await?;
         service.waiting().await?;
         Ok(())
     })
